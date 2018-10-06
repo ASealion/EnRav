@@ -27,18 +27,38 @@
 String ssid =     "Wolles-POWERLINE";
 String password = "xxxxxxxxxxxxxxxx";
 
-int volume=10;
+int volume=25;
 
-VS1053  mp3(VS1053_CS, VS1053_DCS, VS1053_DREQ);
+VS1053  Mp3Player(VS1053_CS, VS1053_DCS, VS1053_DREQ);
 MFRC522 mfrc522(MFRC522_CS, MFRC522_RST);  // Create MFRC522 instance
 
+//----------------------------------------
+
+typedef enum {
+    CMD_UNKNOWN,
+    CMD_PLAY_FILE,
+    CMD_STOP, 
+    CMD_VOL_UP,
+    CMD_VOL_DOWN,
+} PlayerCommand_e;
+
+typedef struct {
+    PlayerCommand_e Command;
+    char           *pFileToPlay;
+} PlayerControlMessage_s;
+
+QueueHandle_t xPlayerQueue;
+//----------------------------------------
 
 void mp3Player( void * parameter ) {
-    VS1053 *pPlayer = (VS1053 *) parameter;
+    PlayerControlMessage_s   PlayerControlMessage;
+    QueueHandle_t           *pPlayerQueue = (QueueHandle_t *) parameter;
+    
 
-    pPlayer->begin();
-    pPlayer->setVolume(volume);
-    pPlayer->connecttoSD("/01.mp3"); // SD card
+
+    Mp3Player.begin();
+    Mp3Player.setVolume(volume);
+    Mp3Player.connecttoSD("/01.mp3"); // SD card
 
     //mp3.begin();
     //mp3.setVolume(volume);
@@ -48,7 +68,31 @@ void mp3Player( void * parameter ) {
 
     while (1)
     {
-        pPlayer->loop();
+        Mp3Player.loop();
+
+        if( xQueueReceive( *pPlayerQueue, &(PlayerControlMessage), ( TickType_t ) 50 ) ) 
+        {
+            ESP_LOGV(TAG, "Received Command %u", PlayerControlMessage.Command);
+
+            if (PlayerControlMessage.Command == CMD_PLAY_FILE) 
+            {
+                //make sure the file exists
+                if (PlayerControlMessage.pFileToPlay != NULL)
+                {
+                    ESP_LOGD(TAG, "Received Path %s", PlayerControlMessage.pFileToPlay);
+
+                    Mp3Player.connecttoSD(PlayerControlMessage.pFileToPlay); 
+
+                    free(PlayerControlMessage.pFileToPlay);
+
+                }
+            }
+            else if (PlayerControlMessage.Command == CMD_STOP) 
+            {
+                ESP_LOGD(TAG, "Received stop");
+                Mp3Player.stop_mp3client();
+            }
+        }
 
         delay(50);
     }
@@ -74,25 +118,37 @@ void setup() {
     delay(1500);
 
 
+    //------------------------------------------
+
+    xPlayerQueue = xQueueCreate( 5, sizeof( PlayerControlMessage_s ) );
+
+    if( xPlayerQueue == NULL )
+    {
+        ESP_LOGE(TAG, "Could not create player queue");
+        while(1);
+    }
     //create the task that will handle the playback
     xTaskCreate(
                     mp3Player,        /* Task function. */
                     "MP3 Player",     /* String with name of task. */
                     4* 1024,          /* Stack size in words. */
-                    &mp3,             /* Parameter passed as input of the task */
+                    &xPlayerQueue,    /* Parameter passed as input of the task */
                     1,                /* Priority of the task. */
                     NULL);            /* Task handle. */
 
-
 }
+
+
+
 
 // The loop function is called in an endless loop
 void loop()
 {
-
     // Prepare key - all keys are set to FFFFFFFFFFFFh at chip delivery from the factory.
-    MFRC522::MIFARE_Key key;
-    for (byte i = 0; i < 6; i++) key.keyByte[i] = 0xFF;
+    // MFRC522::MIFARE_Key key;
+    // for (byte i = 0; i < 6; i++) key.keyByte[i] = 0xFF;
+
+    delay(1000);
 
     // Look for new cards
     if ( ! mfrc522.PICC_IsNewCardPresent()) {
@@ -109,4 +165,58 @@ void loop()
         Serial.print(mfrc522.uid.uidByte[i] < 0x10 ? " 0" : " ");
         Serial.print(mfrc522.uid.uidByte[i], HEX);
     }
+
+
+    PlayerControlMessage_s myMessage = { .Command = CMD_UNKNOWN };
+
+    if (mfrc522.uid.size >= 2) 
+    {
+        if ((mfrc522.uid.uidByte[0] == 0x04) && (mfrc522.uid.uidByte[1] == 0x65))
+        {
+            myMessage.Command       = CMD_PLAY_FILE;
+            myMessage.pFileToPlay   = (char *) malloc (16 * sizeof(char));
+            strncpy(myMessage.pFileToPlay, "/01.mp3", 16); 
+        }
+        else if ((mfrc522.uid.uidByte[0] == 0x04) && (mfrc522.uid.uidByte[1] == 0xE8))
+        {
+            myMessage.Command       = CMD_PLAY_FILE;
+            myMessage.pFileToPlay   = (char *) malloc (16 * sizeof(char));
+            strncpy(myMessage.pFileToPlay, "/02.mp3", 16); 
+        }
+        else if ((mfrc522.uid.uidByte[0] == 0x04) && (mfrc522.uid.uidByte[1] == 0x01))
+        {
+            myMessage.Command       = CMD_STOP;
+            myMessage.pFileToPlay   = NULL;
+        }
+    }
+
+    if (myMessage.Command != CMD_UNKNOWN) 
+    {
+        if (xQueueSend( xPlayerQueue, &myMessage, ( TickType_t ) 0 ) )
+        {
+            ESP_LOGD(TAG, "send to queue successfull");
+        } else {
+            ESP_LOGD(TAG, "send to queue failed");
+
+            //if the send failed, we must do the job
+            free(myMessage.pFileToPlay);
+        }
+    }
+    mfrc522.PICC_HaltA();
+    mfrc522.PCD_StopCrypto1();
+    // PlayerControlMessage_s myMessage;
+
+    // myMessage.Command       = CMD_PLAY_FILE;
+    // myMessage.pFileToPlay   = (char *) malloc (16 * sizeof(char));
+    // strncpy(myMessage.pFileToPlay, "/02.mp3", 16); 
+
+    // if (xQueueSend( xPlayerQueue, &myMessage, ( TickType_t ) 0 ) )
+    // {
+    //     ESP_LOGD(TAG, "send to queue successfull");
+    // } else {
+    //     ESP_LOGD(TAG, "send to queue failed");
+
+    //     //if the send failed, we must do the job
+    //     free(myMessage.pFileToPlay);
+    // }
 }
