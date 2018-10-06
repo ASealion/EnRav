@@ -67,7 +67,7 @@ class VS1053
 
     SPISettings     VS1053_SPI;                     // SPI settings for this slave
 
-    char sbuf[256];
+//    char sbuf[256];
     char path[256];
 
     uint8_t  m_ringbuf[0x5000]; // 20480d           // Ringbuffer for mp3 stream

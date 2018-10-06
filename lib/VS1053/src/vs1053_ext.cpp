@@ -1,5 +1,12 @@
 #include "vs1053_ext.h"
 
+
+#ifdef ARDUINO_ARCH_ESP32
+    #include "esp32-hal-log.h"
+#else
+    static const char *TAG = "VS1053";
+#endif
+
 VS1053::VS1053(uint8_t _cs_pin, uint8_t _dcs_pin, uint8_t _dreq_pin) :
         cs_pin(_cs_pin), dcs_pin(_dcs_pin), dreq_pin(_dreq_pin)
 {
@@ -121,10 +128,10 @@ void VS1053::begin(){
 
     // Init SPI in slow mode (0.2 MHz)
     VS1053_SPI=SPISettings(200000, MSBFIRST, SPI_MODE0);
-    //printDetails("Right after reset/startup \n");
+    ESP_LOGV(TAG, "Right after reset/startup");
+
     delay(20);
-    //printDetails ("20 msec after reset");
-    //testComm("Slow SPI,Testing VS1053 read/write registers... \n");
+
     // Most VS1053 modules will start up in midi mode.  The result is that there is no audio
     // when playing MP3.  You can modify the board, but there is a more elegant way:
     wram_write(0xC017, 3);                             // GPIO DDR=3
@@ -143,9 +150,7 @@ void VS1053::begin(){
     delay(10);
     await_data_request();
     m_endFillByte=wram_read(0x1E06) & 0xFF;
-    sprintf(sbuf, "endFillByte is %X \n", m_endFillByte);
-    if(vs1053_info) vs1053_info(sbuf);
-//    printDetails("After last clocksetting \n");
+    ESP_LOGI(TAG, "endFillByte is 0x%X", m_endFillByte);
     delay(100);
 }
 //---------------------------------------------------------------------------------------
@@ -201,15 +206,14 @@ void VS1053::stopSong()
         sdi_send_fillers(32);
         modereg=read_register(SCI_MODE);  // Read status
         if((modereg & _BV(SM_CANCEL)) == 0)
-                {
+        {
             sdi_send_fillers(2052);
-            sprintf(sbuf, "Song stopped correctly after %d msec \n", i * 10);
-            if(vs1053_info) vs1053_info(sbuf);
+            ESP_LOGD(TAG, "Song stopped correctly after %d msec", i * 10);
             return;
         }
         delay(10);
     }
-    if(vs1053_info) vs1053_info("Song stopped incorrectly! \n");
+    ESP_LOGD(TAG, "Song stopped incorrectly!");
     printDetails();
 }
 //---------------------------------------------------------------------------------------
@@ -237,8 +241,8 @@ void VS1053::printDetails(){
         [12] = "AICTRL0    ", [13] = "AICTRL1    ", [14] = "AICTRL2    ", [15] = "AICTRL3    ",
     };
 
-    if(vs1053_info) vs1053_info("REG         Contents   bin   hex \n");
-    if(vs1053_info) vs1053_info("----------- ---------------- ----\n");
+    ESP_LOGD(TAG, "REG         Contents   bin   hex \n");
+    ESP_LOGD(TAG, "----------- ---------------- ----\n");
     for(i=0; i <= SCI_AICTRL3; i++){
         regbuf[i]=read_register(i);
     }
@@ -247,8 +251,8 @@ void VS1053::printDetails(){
         tmp=String(regbuf[i],2); while(tmp.length()<16) tmp="0"+tmp; // convert regbuf to binary string
         reg=reg+tmp +" ";
         tmp=String(regbuf[i],16); tmp.toUpperCase(); while(tmp.length()<4) tmp="0"+tmp; // conv to hex
-        reg=reg+tmp +"\n";
-        if(vs1053_info) vs1053_info(reg.c_str());
+        reg=reg+tmp;
+        ESP_LOGD(TAG, "%s",reg.c_str());
     }
 }
 //---------------------------------------------------------------------------------------
@@ -257,14 +261,27 @@ bool VS1053::printVersion(){
     uint16_t reg1=0, reg2=0;
     reg1=wram_read(0x1E00);
     reg2=wram_read(0x1E01);
-    if((reg1==0xFFFF)&&(reg2==0xFFFF)){reg1=0; reg2=0;} // all high?, seems not connected
-    else flag=true;
-    sprintf(sbuf, "chipID = %d%d\n", reg1, reg2);
-    if(vs1053_info) vs1053_info(sbuf);
+
+    if((reg1==0xFFFF)&&(reg2==0xFFFF))
+    {
+        reg1=0; 
+        reg2=0;
+    } // all high?, seems not connected
+    else 
+    {
+        flag=true;
+    }
+    ESP_LOGD(TAG, "chipID = %d%d\n", reg1, reg2);
+
     reg1=wram_read(0x1E02) & 0xFF;
-    if(reg1==0xFF) {reg1=0; flag=false;} // version too high
-    sprintf(sbuf, "version = %d\n", reg1);
-    if(vs1053_info) vs1053_info(sbuf);
+    if(reg1==0xFF) 
+    {
+        reg1=0; 
+        flag=false;
+    } // version too high
+
+    ESP_LOGD(TAG, "version = %d\n", reg1);
+
     return flag;
 }
 //---------------------------------------------------------------------------------------
@@ -385,12 +402,11 @@ void VS1053::showstreamtitle(const char *ml, bool full){
         m_icystreamtitle="";                    // Unknown type
         return;                                 // Do not show
     }
-    if(pos1==-1 && pos4==-1){
+    if(pos1==-1 && pos4==-1)
+    {
         // Info probably from playlist
         st=mline;
-        if(vs1053_showstreamtitle) vs1053_showstreamtitle(st.c_str());
-        st="Streamtitle: " + st + "\n";
-        if(vs1053_info) vs1053_info(sbuf);
+        ESP_LOGD(TAG, "Streamtitle: %s", st.c_str());
     }
 }
 //---------------------------------------------------------------------------------------
@@ -416,22 +432,19 @@ void VS1053::handlebyte(uint8_t b){
                 lcml=m_metaline;                                // Use lower case for compare
                 lcml.toLowerCase();
                 lcml.trim();
-                sprintf(sbuf, "%s\n", m_metaline.c_str());
-                if(vs1053_info) vs1053_info(sbuf);              // Yes, Show it
+                ESP_LOGD(TAG, "%s", m_metaline.c_str());      // Yes, Show it       
                 if(lcml.indexOf("content-type:") >= 0){         // Line with "Content-Type: xxxx/yyy"
                     if(lcml.indexOf("audio") >= 0){             // Is ct audio?
                         m_ctseen=true;                          // Yes, remember seeing this
                         ct=m_metaline.substring(13);            // Set contentstype. Not used yet
                         ct.trim();
-                        sprintf(sbuf, "%s seen.\n", ct.c_str());
-                        if(vs1053_info) vs1053_info(sbuf);
+                        ESP_LOGD(TAG, "%s seen.", ct.c_str());
                     }
                     if(lcml.indexOf("ogg") >= 0){               // Is ct ogg?
                         m_ctseen=true;                          // Yes, remember seeing this
                         ct=m_metaline.substring(13);
                         ct.trim();
-                        sprintf(sbuf, "%s seen.\n", ct.c_str());
-                        if(vs1053_info) vs1053_info(sbuf);
+                        ESP_LOGD(TAG, "%s seen.", ct.c_str());
                         m_metaint=0;                            // ogg has no metadata
                         m_bitrate=0;
                         m_icyname=="";
@@ -441,14 +454,12 @@ void VS1053::handlebyte(uint8_t b){
                 else if(lcml.startsWith("location:")){
                     host=m_metaline.substring(lcml.indexOf("http"),lcml.length());// use metaline instead lcml
                     if(host.indexOf("&")>0)host=host.substring(0,host.indexOf("&")); // remove parameter
-                    sprintf(sbuf, "redirect to new host %s\n", host.c_str());
-                    if(vs1053_info) vs1053_info(sbuf);
+                    ESP_LOGD(TAG, "redirect to new host %s", host.c_str());
                     connecttohost(host);
                 }
                 else if(lcml.startsWith("icy-br:")){
                     m_bitrate=m_metaline.substring(7).toInt();  // Found bitrate tag, read the bitrate
-                    sprintf(sbuf,"%d", m_bitrate);
-                    if(vs1053_bitrate) vs1053_bitrate(sbuf);
+                    ESP_LOGD(TAG, "%d", m_bitrate);
                 }
                 else if(lcml.startsWith("icy-metaint:")){
                     m_metaint=m_metaline.substring(12).toInt(); // Found metaint tag, read the value
@@ -466,7 +477,7 @@ void VS1053::handlebyte(uint8_t b){
                     // Station provides chunked transfer
                     if(m_metaline.endsWith("chunked")){
                         m_chunked=true;
-                        if(vs1053_info) vs1053_info("chunked data transfer\n");
+                        ESP_LOGD(TAG, "chunked data transfer");
                         m_chunkcount=0;                         // Expect chunkcount in DATA
                     }
                 }
@@ -485,8 +496,7 @@ void VS1053::handlebyte(uint8_t b){
                 if(m_bitrate==0){if(vs1053_bitrate) vs1053_bitrate("");} // no bitrate received
                 if(m_f_ogg==true){
                     m_datamode=VS1053_OGG;                      // Overwrite m_datamode
-                    sprintf(sbuf, "Switch to OGG, bitrate is %d, metaint is %d\n", m_bitrate, m_metaint); // Show bitrate and metaint
-                    if(vs1053_info) vs1053_info(sbuf);
+                    ESP_LOGD(TAG, "Switch to OGG, bitrate is %d, metaint is %d", m_bitrate, m_metaint); // Show bitrate and metaint
                     String lasthost=m_lastHost;
                     uint idx=lasthost.indexOf('?');
                     if(idx>0) lasthost=lasthost.substring(0, idx);
@@ -495,8 +505,7 @@ void VS1053::handlebyte(uint8_t b){
                 }
                 else{
                     m_datamode=VS1053_DATA;                         // Expecting data now
-                    sprintf(sbuf, "Switch to DATA, bitrate is %d, metaint is %d\n", m_bitrate, m_metaint); // Show bitrate and metaint
-                    if(vs1053_info) vs1053_info(sbuf);
+                    ESP_LOGD(TAG, "Switch to DATA, bitrate is %d, metaint is %d", m_bitrate, m_metaint); // Show bitrate and metaint
                     String lasthost=m_lastHost;
                     uint idx=lasthost.indexOf('?');
                     if(idx>0) lasthost=lasthost.substring(0, idx);
@@ -519,11 +528,11 @@ void VS1053::handlebyte(uint8_t b){
         {
             m_firstmetabyte=false;                              // Not the first anymore
             m_metacount=b * 16 + 1;                             // New count for metadata including length byte
-            if(m_metacount > 1){
-                sprintf(sbuf, "Metadata block %d bytes\n",      // Most of the time there are zero bytes of metadata
+            if(m_metacount > 1)
+            {
+                ESP_LOGD(TAG, "Metadata block %d bytes",      // Most of the time there are zero bytes of metadata
                         m_metacount-1);
-                if(vs1053_info) vs1053_info(sbuf);
-           }
+            }
             m_metaline="";                                      // Set to empty
         }
         else
@@ -541,7 +550,7 @@ void VS1053::handlebyte(uint8_t b){
             	if( !m_f_localfile) showstreamtitle(m_metaline.c_str(), true);         // Show artist and title if present in metadata
             }
             if(m_metaline.length() > 1500){                     // Unlikely metaline length?
-                if(vs1053_info) vs1053_info("Metadata block to long! Skipping all Metadata from now on.\n");
+                ESP_LOGD(TAG, "Metadata block to long! Skipping all Metadata from now on.");
                 m_metaint=16000;                                // Probably no metadata
                 m_metaline="";                                  // Do not waste memory on this
             }
@@ -558,7 +567,7 @@ void VS1053::handlebyte(uint8_t b){
         m_datamode=VS1053_PLAYLISTHEADER;                       // Handle playlist data
         playlistcnt=1;                                          // Reset for compare
         m_totalcount=0;                                         // Reset totalcount
-        if(vs1053_info) vs1053_info("Read from playlist\n");
+        ESP_LOGD(TAG, "Read from playlist");
     }
     if(m_datamode == VS1053_PLAYLISTHEADER){                    // Read header
         if((b > 0x7F) ||                                        // Ignore unprintable characters
@@ -570,22 +579,20 @@ void VS1053::handlebyte(uint8_t b){
         else if(b == '\n')                                      // Linefeed ?
                 {
             m_LFcount++;                                        // Count linefeeds
-            sprintf(sbuf, "Playlistheader: %s\n", m_metaline.c_str());  // Show playlistheader
-            if(vs1053_info) vs1053_info(sbuf);
+            ESP_LOGD(TAG, "Playlistheader: %s", m_metaline.c_str());  // Show playlistheader
             lcml=m_metaline;                                // Use lower case for compare
             lcml.toLowerCase();
             lcml.trim();
             if(lcml.startsWith("location:")){
                  host=m_metaline.substring(lcml.indexOf("http"),lcml.length());// use metaline instead lcml
                 if(host.indexOf("&")>0)host=host.substring(0,host.indexOf("&")); // remove parameter
-                sprintf(sbuf, "redirect to new host %s\n", host.c_str());
-                if(vs1053_info) vs1053_info(sbuf);
+                ESP_LOGD(TAG, "redirect to new host %s", host.c_str());
                 connecttohost(host);
             }
             m_metaline="";                                      // Ready for next line
             if(m_LFcount == 2)
                     {
-                if(vs1053_info) vs1053_info("Switch to PLAYLISTDATA\n");
+                ESP_LOGD(TAG, "Switch to PLAYLISTDATA");
                 m_datamode=VS1053_PLAYLISTDATA;                 // Expecting data now
                 return;
             }
@@ -605,8 +612,7 @@ void VS1053::handlebyte(uint8_t b){
                 { /* Yes, ignore */ }
 
         else if(b == '\n'){                                     // Linefeed or end of string?
-            sprintf(sbuf, "Playlistdata: %s\n", m_metaline.c_str());  // Show playlistdata
-            if(vs1053_info) vs1053_info(sbuf);
+            ESP_LOGD(TAG, "Playlistdata: %s", m_metaline.c_str());  // Show playlistdata
             if(m_playlist.endsWith("m3u")){
                 if(m_metaline.length() < 5) {                   // Skip short lines
                     m_metaline="";                              // Flush line
@@ -626,8 +632,7 @@ void VS1053::handlebyte(uint8_t b){
                     return;}                                    // Ignore commentlines
                 // Now we have an URL for a .mp3 file or stream.  Is it the rigth one?
                 //if(metaline.indexOf("&")>0)metaline=host.substring(0,metaline.indexOf("&"));
-                sprintf(sbuf, "Entry %d in playlist found: %s\n", playlistcnt, m_metaline.c_str());
-                if(vs1053_info) vs1053_info(sbuf);
+                ESP_LOGD(TAG, "Entry %d in playlist found: %s", playlistcnt, m_metaline.c_str());
                 if(m_metaline.indexOf("&")){
                     m_metaline=m_metaline.substring(0, m_metaline.indexOf("&"));}
                 if(m_playlist_num == playlistcnt){
@@ -657,8 +662,7 @@ void VS1053::handlebyte(uint8_t b){
                 if(m_metaline.startsWith("Title1")){
                     m_plsStationName=m_metaline.substring(7);
                     if(vs1053_showstation) vs1053_showstation(m_plsStationName.c_str());
-                    sprintf(sbuf, "StationName: %s\n", m_plsStationName.c_str());
-                    if(vs1053_info) vs1053_info(sbuf);
+                    ESP_LOGD(TAG, "StationName: %s", m_plsStationName.c_str());
                     m_f_plsTitle=true;
                 }
                 if(m_metaline.startsWith("Length1")) m_f_plsTitle=true; // if no Title is available
@@ -688,8 +692,7 @@ void VS1053::handlebyte(uint8_t b){
                         m_plsStationName=m_metaline.substring(7);
                         if(m_plsURL.indexOf('<')>0)m_plsURL=m_plsURL.substring(0,m_plsURL.indexOf('<')); // remove rest
                         if(vs1053_showstation) vs1053_showstation(m_plsStationName.c_str());
-                        sprintf(sbuf, "StationName: %s\n", m_plsStationName.c_str());
-                        if(vs1053_info) vs1053_info(sbuf);
+                        ESP_LOGD(TAG, "StationName: %s", m_plsStationName.c_str());
                         m_f_plsTitle=true;
                     }
                 }//entry
@@ -728,19 +731,19 @@ void VS1053::loop(){
 
     // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     if(m_f_localfile){                                      // Playing file from SD card?
-         av=mp3file.available();                            // Bytes left in file
-         if(av < maxchunk) maxchunk=av;                     // Reduce byte count for this mp3loop()
-         if(maxchunk){                                      // Anything to read?
-             m_btp=mp3file.read(m_ringbuf, maxchunk);       // Read a block of data
-             sdi_send_buffer(m_ringbuf,m_btp);
-         }
-         if(av == 0){                                       // No more data from SD Card
-             mp3file.close();
-             m_f_localfile=false;
-             sprintf(sbuf,"End of mp3file %s\n",m_mp3title.c_str());
-             if(vs1053_info) vs1053_info(sbuf);
-             if(vs1053_eof_mp3) vs1053_eof_mp3(m_mp3title.c_str());
-         }
+        av=mp3file.available();                             // Bytes left in file
+        if(av < maxchunk) maxchunk=av;                      // Reduce byte count for this mp3loop()
+        if(maxchunk)                                        // Anything to read?
+        {
+            m_btp=mp3file.read(m_ringbuf, maxchunk);        // Read a block of data
+            sdi_send_buffer(m_ringbuf,m_btp);
+        }
+        if(av == 0)
+        {                                                   // No more data from SD Card
+            mp3file.close();
+            m_f_localfile=false;
+            ESP_LOGD(TAG, "End of mp3file %s",m_mp3title.c_str());
+        }
     }
     // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     if(m_f_webstream){                                      // Playing file from URL?
@@ -871,7 +874,7 @@ void VS1053::loop(){
                 i++;
                 if(i>150000){    // wait several seconds
                     i=0;
-                    if(vs1053_info) vs1053_info("Stream lost -> try new connection\n");
+                    ESP_LOGD(TAG, "Stream lost -> try new connection");
                     connecttohost(m_lastHost);} // try a new connection
             }
             else i=0;
@@ -913,8 +916,7 @@ bool VS1053::connecttohost(String host){
         m_f_stream_ready=false;
         m_lastHost=host;                                  // Remember the current host
     }
-    sprintf(sbuf, "Connect to new host: %s\n", host.c_str());
-    if(vs1053_info) vs1053_info(sbuf);
+    ESP_LOGD(TAG, "Connect to new host: %s", host.c_str());
 
     // initializationsequence
     m_rcount=0;                                             // Empty ringbuff
@@ -940,14 +942,13 @@ bool VS1053::connecttohost(String host){
 
     if(host.endsWith(".m3u")||
             host.endsWith(".pls")||
-                 host.endsWith("asx")){                     // Is it an m3u or pls or asx playlist?
+            host.endsWith("asx")){                     // Is it an m3u or pls or asx playlist?
         m_playlist=host;                                    // Save copy of playlist URL
         m_datamode=VS1053_PLAYLISTINIT;                     // Yes, start in PLAYLIST mode
         if(m_playlist_num == 0){                            // First entry to play?
             m_playlist_num=1;                               // Yes, set index
         }
-        sprintf(sbuf, "Playlist request, entry %d\n", m_playlist_num); // Most of the time there are zero bytes of metadata
-        if(vs1053_info) vs1053_info(sbuf);
+        ESP_LOGD(TAG, "Playlist request, entry %d", m_playlist_num); // Most of the time there are zero bytes of metadata
     }
 
     // In the URL there may be an extension, like noisefm.ru:8000/play.m3u&t=.m3u
@@ -963,10 +964,8 @@ bool VS1053::connecttohost(String host){
         port=host.substring(inx + 1).toInt();               // Get portnumber as integer
         hostwoext=host.substring(0, inx);                   // Host without portnumber
     }
-    sprintf(sbuf, "Connect to %s on port %d, extension %s\n",
+    ESP_LOGD(TAG, "Connect to %s on port %d, extension %s",
             hostwoext.c_str(), port, extension.c_str());
-    if(vs1053_info) vs1053_info(sbuf);
-    if(vs1053_showstreaminfo) vs1053_showstreaminfo(sbuf);
 
     String resp=String("GET ") + extension +
                 String(" HTTP/1.1\r\n") +
@@ -977,21 +976,20 @@ bool VS1053::connecttohost(String host){
 
     if(m_ssl==false){
         if(client.connect(hostwoext.c_str(), port)){
-            if(vs1053_info) vs1053_info("Connected to server\n");
+            ESP_LOGD(TAG, "Connected to server");
             client.print(resp);
             return true;
         }
     }
     if(m_ssl==true){
         if(clientsecure.connect(hostwoext.c_str(), 443)){
-            if(vs1053_info) vs1053_info("SSL/TLS Connected to server\n");
+            ESP_LOGD(TAG, "SSL/TLS Connected to server");
             clientsecure.print(resp);
             return true;
         }
     }
 
-    sprintf(sbuf, "Request %s failed!\n", host.c_str());
-    if(vs1053_info) vs1053_info(sbuf);
+    ESP_LOGD(TAG, "Request %s failed!", host.c_str());
     if(vs1053_showstation) vs1053_showstation("");
     if(vs1053_showstreamtitle) vs1053_showstreamtitle("");
     if(vs1053_showstreaminfo) vs1053_showstreaminfo("");
@@ -1026,12 +1024,12 @@ bool VS1053::connecttoSD(String sdfile){
     path[i]=0;
     m_mp3title=sdfile.substring(sdfile.lastIndexOf('/') + 1, sdfile.length());
     showstreamtitle(m_mp3title.c_str(), true);
-    sprintf(sbuf, "Reading file: %s\n", path);
-    if(vs1053_info) vs1053_info(sbuf);
+    ESP_LOGD(TAG, "Reading file: %s", path);
+
     fs::FS &fs=SD;
     mp3file=fs.open(path);
     if( !mp3file){
-        if(vs1053_info) vs1053_info("Failed to open file for reading\n");
+        ESP_LOGE(TAG, "Failed to open file %s for reading", path);
         return false;
     }
     return true;
