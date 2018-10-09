@@ -10,6 +10,13 @@
     static const char *TAG = "main";
 #endif
 
+#include "credentials.h"
+
+#ifndef __CREDENTIALS__H
+    String ssid =     "WLAN";
+    String password = "xxxxxxxxxxxxxxxx";
+#endif
+
 // Digital I/O used
 #define SPI_CLK         14    
 #define SPI_MISO         4
@@ -24,10 +31,8 @@
 #define MFRC522_RST     19
 #define MFRC522_CS      21
 
-String ssid =     "Wolles-POWERLINE";
-String password = "xxxxxxxxxxxxxxxx";
 
-int volume=25;
+int volume=15;
 
 VS1053  Mp3Player(VS1053_CS, VS1053_DCS, VS1053_DREQ);
 MFRC522 mfrc522(MFRC522_CS, MFRC522_RST);  // Create MFRC522 instance
