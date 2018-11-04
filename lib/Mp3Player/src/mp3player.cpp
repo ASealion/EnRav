@@ -12,15 +12,10 @@ Mp3player::~Mp3player()
 }
 
 
-QueueHandle_t *Mp3player::begin( void )
+void Mp3player::begin( QueueHandle_t *pCommandQueue )
 {
-    m_PlayerQueue = xQueueCreate( 5, sizeof( PlayerControlMessage_s ) );
+    m_pPlayerQueue = pCommandQueue;
 
-    if( m_PlayerQueue == NULL )
-    {
-        ESP_LOGE(TAG, "Could not create player queue");
-        return NULL;
-    }
     //create the task that will handle the playback
     xTaskCreate(
                     TaskFunctionAdapter,        /* Task function. */
@@ -29,8 +24,6 @@ QueueHandle_t *Mp3player::begin( void )
                     this,                       /* Parameter passed as input of the task */
                     1,                          /* Priority of the task. */
                     &m_handle);                 /* Task handle. */
-
-    return &(this->m_PlayerQueue);
 }
 
 
@@ -60,11 +53,14 @@ void Mp3player::Run( void ) {
     //mp3.connecttohost("edge.audio.3qsdn.com/senderkw-mp3");
     //mp3.connecttohost("https://icecast-qmusicnl-cdp.triple-it.nl/Qmusic_nl_fouteuur_96.mp3");
 
+//TODO check if queue is set
+
+
     while (true)
     {
         m_pPlayer->loop();
 
-        if( xQueueReceive( m_PlayerQueue, &(PlayerControlMessage), ( TickType_t ) 50 ) ) 
+        if( xQueueReceive( *m_pPlayerQueue, &(PlayerControlMessage), ( TickType_t ) 50 ) ) 
         {
             ESP_LOGV(TAG, "Received Command %u", PlayerControlMessage.Command);
 
@@ -100,5 +96,5 @@ void Mp3player::CleanUp( void )
 
 QueueHandle_t *Mp3player::getQueue( void )
 {
-    return &(this->m_PlayerQueue);
+    return m_pPlayerQueue;
 }
