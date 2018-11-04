@@ -58,6 +58,9 @@ void UserInterface::Run( void ) {
     
     ESP_LOGD(TAG, "Thread started");
 
+    //prepare some internal variables
+    m_CardStatus = NoCard;
+
     //check if the command queue is set
     if (m_pPlayerQueue == NULL)
     {
@@ -68,53 +71,146 @@ void UserInterface::Run( void ) {
     while (true)
     {
 
-        // Look for new cards
-        if ( m_pRfReader->PICC_IsNewCardPresent() == true) {
-
-            ESP_LOGI(TAG, "New card detected");
-
-            // Select one of the cards
-            if ( m_pRfReader->PICC_ReadCardSerial()) {
-                
-                if (this->ReadInformationFromTag() == true) 
+        switch (m_CardStatus)
+        {
+            //Check if the card is still present
+            case ValidCard:
+            case UnknownCard:
                 {
-                    ESP_LOGD(TAG, "Valid tag found");
+                    bool result = false;
 
-                    //check volume
-
-                    //check flags
-
-                    //send filename to player
-                    if (m_NfcTag.pTarget != NULL) 
+                    // Since wireless communication is voodoo we'll give it a few retrys before killing the music
+                    for (uint32_t counter = 0; counter < 3; counter++) 
                     {
-                        PlayerControlMessage_s myMessage = { .Command = CMD_PLAY_FILE };
-                        myMessage.pFileToPlay = m_NfcTag.pTarget;
+                        // Detect Tag without looking for collisions
+                        byte bufferATQA[2];
+                        byte bufferSize = sizeof(bufferATQA);
 
-                        if (xQueueSend( *m_pPlayerQueue, &myMessage, ( TickType_t ) 0 ) )
+                        MFRC522::StatusCode status = m_pRfReader->PICC_WakeupA(bufferATQA, &bufferSize);
+
+                        if (status == MFRC522::STATUS_OK)
                         {
-                            ESP_LOGD(TAG, "send to queue successfull");
-                        } else {
-                            ESP_LOGW(TAG, "send to queue failed");
+                            if (m_pRfReader->PICC_ReadCardSerial() == true) 
+                            {
+                                bool uidEqual = true;
 
-                             //if the send failed, we must do the job
-                            free(m_NfcTag.pTarget);
+                                for (uint32_t count = 0; count < m_lastCardUidSize; count++)
+                                {
+                                    if (m_pRfReader->uid.uidByte[count] != m_lastCardUid[count])
+                                    {
+                                        uidEqual = false;
+                                        break;
+                                    }
+                                }
+
+                                if (uidEqual == true) 
+                                {
+                                    result = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    //if the card was not found
+                    if (result == false)
+                    {
+                        if (m_CardStatus == CardStatus::ValidCard)
+                        {
+                            ESP_LOGD(TAG,"Card disappeared, stopping playback.");
+
+                            // stop playback
+                            PlayerControlMessage_s myMessage = { .Command = CMD_STOP };
+
+                            if (xQueueSend( *m_pPlayerQueue, &myMessage, ( TickType_t ) 0 ) )
+                            {
+                                ESP_LOGD(TAG, "send to queue successfull");
+                            } else {
+                                ESP_LOGW(TAG, "send to queue failed");
+                            }
+                        }
+                        else 
+                        {
+                            ESP_LOGD(TAG,"Card disappeared");
                         }
 
-                        //if successful or not, our pointer to the file is no longer needed
-                        m_NfcTag.pTarget = NULL;
+                        m_CardStatus = NoCard;
+                    } 
+                    else
+                    {
+                        delay(1000);
                     }
-                } 
-                else 
+                    break;
+                }
+            case NoCard:
+
+                // Look for new cards
+                if ( m_pRfReader->PICC_IsNewCardPresent() == true) 
                 {
-                    ESP_LOGI(TAG, "No valid tag found / could no read information");
+
+                    ESP_LOGI(TAG, "New card detected");
+                    m_CardStatus = CardStatus::ValidCard;
+
+                    // Select one of the cards
+                    if ( m_pRfReader->PICC_ReadCardSerial()) 
+                    {
+                        // Show some details of the PICC (that is: the tag/card)
+                        DumpByteArray("Card UID:", m_pRfReader->uid.uidByte, m_pRfReader->uid.size);
+
+                        //remember the UID to check if the was removed
+                        m_lastCardUidSize = m_pRfReader->uid.size;
+                        memcpy(m_lastCardUid, m_pRfReader->uid.uidByte, m_lastCardUidSize );
+
+                        if (this->ReadInformationFromTag() == true) 
+                        {
+                            ESP_LOGD(TAG, "Valid tag found");
+
+                            //check volume
+
+                            //check flags
+
+                            //send filename to player
+                            if (m_NfcTag.pTarget != NULL) 
+                            {
+                                PlayerControlMessage_s myMessage = { .Command = CMD_PLAY_FILE };
+                                myMessage.pFileToPlay = m_NfcTag.pTarget;
+
+                                if (xQueueSend( *m_pPlayerQueue, &myMessage, ( TickType_t ) 0 ) )
+                                {
+                                    ESP_LOGD(TAG, "send to queue successfull");
+                                } else {
+                                    ESP_LOGW(TAG, "send to queue failed");
+
+                                    //if the send failed, we must do the job
+                                    free(m_NfcTag.pTarget);
+                                }
+
+                                //if successful or not, our pointer to the file is no longer needed
+                                m_NfcTag.pTarget = NULL;
+                            }
+                        } 
+                        else 
+                        {
+                            ESP_LOGI(TAG, "No valid tag found / could no read information");
+                            m_CardStatus = CardStatus::UnknownCard;
+                        }
+
+                        //end communication with the card
+                        m_pRfReader->PICC_HaltA();
+                        m_pRfReader->PCD_StopCrypto1();
+                    }
                 }
 
+                //wait 250ms before we check again for a new card
+                delay(250);
 
+                break;
 
-            }
-        }
-
-        delay(250);
+            default:
+                m_CardStatus = UserInterface::NoCard;
+                ESP_LOGW(TAG, "illegal card status");
+                break;
+        };
     };
 }
 
@@ -132,9 +228,6 @@ bool UserInterface::ReadInformationFromTag() {
 
     //mark the data set as invalid
     m_NfcTag.TagValid = false;
-
-    // Show some details of the PICC (that is: the tag/card)
-    DumpByteArray("Card UID:", m_pRfReader->uid.uidByte, m_pRfReader->uid.size);
 
     //check the type
     piccType = m_pRfReader->PICC_GetType(m_pRfReader->uid.sak);
@@ -288,10 +381,6 @@ bool UserInterface::ReadInformationFromTag() {
     }
 
 FinishReadInformation:
-    //end communication with the card
-    m_pRfReader->PICC_HaltA();
-    m_pRfReader->PCD_StopCrypto1();
-
     if ((m_NfcTag.pTarget != NULL)&&(m_NfcTag.TagValid == false))
     {
         free(m_NfcTag.pTarget);
@@ -380,9 +469,6 @@ bool UserInterface::WriteInformationToTag() {
     }
 
 FinishWriteInformation:
-    //end communication with the card
-    m_pRfReader->PICC_HaltA();
-    m_pRfReader->PCD_StopCrypto1();
     return result;
 }
 
