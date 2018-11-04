@@ -38,62 +38,28 @@ int volume=15;
 UserInterface   myInterface(MFRC522_CS, MFRC522_RST);
 Mp3player       MyPlayer(VS1053_CS, VS1053_DCS, VS1053_DREQ);
 
-QueueHandle_t *pPlayerQueue;
+QueueHandle_t   PlayerCommandQueue;
 
-
-//-----------------------------------------------------------------------------
-
-
-// nfcTagObject_s myTag =  {   .Information = {
-//                             .Entry = 
-//                             { 
-//                                 .Header = 
-//                                 { 
-//                                     .Cookie     = 0x13377331, 
-//                                     .Version    = 0x01,
-//                                 },
-//                                 .MetaData =
-//                                 {
-//                                     .Shuffle    = 0x00,
-//                                     .Repeat     = 0x00,
-//                                 },
-//                             },
-//                             }
-//                         };
-
-// MFRC522::MIFARE_Key key = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-
-//-----------------------------------------------------------------------------
 
 //The setup function is called once at startup of the sketch
 void setup() {
-    
+
+    PlayerCommandQueue = xQueueCreate( 5, sizeof( PlayerControlMessage_s ) );
+
     Serial.begin(115200);
 
     SPI.begin(SPI_CLK, SPI_MISO, SPI_MOSI);
 
-    myInterface.begin();
+    myInterface.begin(&PlayerCommandQueue);
 
     SD.begin(SDCARD_CS);
 
-    pPlayerQueue = MyPlayer.begin();
-
-    
+    MyPlayer.begin(&PlayerCommandQueue);
 
     // WiFi.disconnect();
     // WiFi.mode(WIFI_STA);
     // WiFi.begin(ssid.c_str(), password.c_str());
     // while (WiFi.status() != WL_CONNECTED) delay(1500);
-    
-
-
-
-   //------------------------------------------
-    // Serial.println(F("Scan a MIFARE Classic PICC to demonstrate Value Block mode."));
-    // Serial.print(F("Using key (for A and B):"));
-    // dump_byte_array(key.keyByte, MFRC522::MF_KEY_SIZE);
-    // Serial.println();
-    //------------------------------------------
 
 
 }
@@ -107,7 +73,7 @@ void loop()
     // for (byte i = 0; i < 6; i++) key.keyByte[i] = 0xFF;
 
 
-delay(100);
+    delay(100);
 
 
 

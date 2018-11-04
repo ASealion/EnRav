@@ -30,13 +30,13 @@
             Mp3player(uint8_t _cs_pin, uint8_t _dcs_pin, uint8_t _dreq_pin);
             ~Mp3player();
 
-            QueueHandle_t *begin( void );
+            void            begin( QueueHandle_t *commandQueue );
 
-            QueueHandle_t *getQueue( void );
+            QueueHandle_t   *getQueue( void );
 
         private:
             TaskHandle_t    m_handle;
-            QueueHandle_t   m_PlayerQueue;
+            QueueHandle_t   *m_pPlayerQueue;
             VS1053          *m_pPlayer;
 
 

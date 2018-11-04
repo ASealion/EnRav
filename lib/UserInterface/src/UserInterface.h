@@ -19,9 +19,7 @@
             UserInterface(uint8_t cs, uint8_t rst);
             ~UserInterface();
 
-            void begin( void );
-
-            void setQueue( QueueHandle_t *pQueue );
+            void begin( QueueHandle_t *pPlayerCommandQueue );
 
         private:
                     // this object stores nfc tag data
@@ -29,16 +27,14 @@
                 union {
                     struct {
                         struct {
-                            uint32_t    Cookie;         // 4 byte
-                            uint32_t    Version;        // 4 byte
+                            uint32_t    Cookie;             // 4 byte
+                            uint32_t    Version;            // 4 byte
                         } Header;
                         struct {
-                            // uint8_t     Shuffle;        // 1 byte
-                            // uint8_t     Repeat;         // 1 byte
-                            // uint8_t     Volume;         // 1 byte
-                            uint32_t    LastPosition;   // 4 byte
-                            int16_t     TargetLength;   // 2 byte
-                            uint8_t     Spare[2];       // 2 byte
+                            int16_t     TargetLength;       // 2 byte
+                            uint8_t     Configuration;      // 1 byte
+                            uint8_t     LastListPostion;    // 1 Byte
+                            uint32_t    LastFilePosition;   // 4 byte
                         } MetaData;
                     }Entry;                             // complete 16 byte
                     uint8_t             Raw16[16];
@@ -46,6 +42,7 @@
                 }Information;
 
                 char                    *pTarget;
+                bool                    TagValid;
             } nfcTag_s;
 
             TaskHandle_t            m_handle;

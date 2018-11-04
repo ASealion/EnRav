@@ -1,4 +1,6 @@
 #include "UserInterface.h"
+#include "mp3player.h"
+#include "Arduino.h"
 
 #ifdef ARDUINO_ARCH_ESP32
     #include "esp32-hal-log.h"
@@ -17,13 +19,15 @@ UserInterface::~UserInterface()
 }
 
 
-void UserInterface::begin( void )
+void UserInterface::begin( QueueHandle_t *pPlayerCommandQueue )
 {
     ESP_LOGD(TAG, "Start User Interface Task");
 
     m_pRfReader->PCD_Init();		            // Init MFRC522
 	m_pRfReader->PCD_DumpVersionToSerial();	// Show details of PCD - MFRC522 Card Reader details
-	ESP_LOGD(TAG, "Scan PICC to see UID, SAK, type, and data blocks...     ");
+
+    //save the queue where we must send our commands
+    m_pPlayerQueue = pPlayerCommandQueue;
 
     //create the task that will handle the playback
     xTaskCreate(
@@ -54,6 +58,13 @@ void UserInterface::Run( void ) {
     
     ESP_LOGD(TAG, "Thread started");
 
+    //check if the command queue is set
+    if (m_pPlayerQueue == NULL)
+    {
+        ESP_LOGE(TAG, "Player command queue was not defines.");
+        return;
+    }
+
     while (true)
     {
 
@@ -65,126 +76,39 @@ void UserInterface::Run( void ) {
             // Select one of the cards
             if ( m_pRfReader->PICC_ReadCardSerial()) {
                 
-
                 if (this->ReadInformationFromTag() == true) 
                 {
                     ESP_LOGD(TAG, "Valid tag found");
+
+                    //check volume
+
+                    //check flags
+
+                    //send filename to player
+                    if (m_NfcTag.pTarget != NULL) 
+                    {
+                        PlayerControlMessage_s myMessage = { .Command = CMD_PLAY_FILE };
+                        myMessage.pFileToPlay = m_NfcTag.pTarget;
+
+                        if (xQueueSend( *m_pPlayerQueue, &myMessage, ( TickType_t ) 0 ) )
+                        {
+                            ESP_LOGD(TAG, "send to queue successfull");
+                        } else {
+                            ESP_LOGW(TAG, "send to queue failed");
+
+                             //if the send failed, we must do the job
+                            free(m_NfcTag.pTarget);
+                        }
+
+                        //if successful or not, our pointer to the file is no longer needed
+                        m_NfcTag.pTarget = NULL;
+                    }
                 } 
                 else 
                 {
                     ESP_LOGI(TAG, "No valid tag found / could no read information");
-
-                    // if ((m_pRfReader->uid.uidByte[0] == 0x51) && (m_pRfReader->uid.uidByte[1] == 0xc9)) 
-                    // {
-                    //     m_NfcTag.pTarget = "/01.mp3";
-
-                    //     m_NfcTag.Information.Entry.Header.Cookie            = magicKey;
-                    //     m_NfcTag.Information.Entry.Header.Version           = 1;
-
-                    //     // m_NfcTag.Information.Entry.MetaData.Shuffle         = 0;
-                    //     // m_NfcTag.Information.Entry.MetaData.Repeat          = 0;
-                    //     // m_NfcTag.Information.Entry.MetaData.Volume          = 0;
-                    //     m_NfcTag.Information.Entry.MetaData.LastPosition    = 0;
-                    //     m_NfcTag.Information.Entry.MetaData.TargetLength    = strlen(m_NfcTag.pTarget);
-
-                    //     WriteInformationToTag();
-                    // }
                 }
 
-
-
-                // // Show some details of the PICC (that is: the tag/card)
-                // ESP_LOGD(TAG, "Card UID:");
-                // dump_byte_array(m_pRfReader->uid.uidByte, m_pRfReader->uid.size);
-
-                // Serial.println();
-                // Serial.print(F("PICC type: "));
-                // MFRC522::PICC_Type piccType = m_pRfReader->PICC_GetType(m_pRfReader->uid.sak);
-                // Serial.println(m_pRfReader->PICC_GetTypeName(piccType));
-
-
-                // //------
-                // MFRC522::StatusCode status;
-                // MFRC522::MIFARE_Key key;
-                // uint8_t block;
-                // byte buffer[18];
-                // byte size = sizeof(buffer);
-
-                // for (byte i = 0; i < 6; i++) key.keyByte[i] = 0xFF;
-
-                
-                // if ((piccType == MFRC522::PICC_TYPE_MIFARE_MINI ) ||
-                //     (piccType == MFRC522::PICC_TYPE_MIFARE_1K ) ||
-                //     (piccType == MFRC522::PICC_TYPE_MIFARE_4K ) )
-                // {
-                //     block = 4;
-                //     // Authenticate using key A
-                //     Serial.println(F("Authenticating using key A..."));
-                //     status = m_pRfReader->PCD_Authenticate(MFRC522::PICC_CMD_MF_AUTH_KEY_A, block, &key, &(m_pRfReader->uid));
-                //     if (status != MFRC522::STATUS_OK) {
-                //         Serial.print(F("PCD_Authenticate() failed: "));
-                //         Serial.println(m_pRfReader->GetStatusCodeName(status));
-                //         return;
-                //     }
-
-                //     // read 16 byte blocks 
-                //     Serial.print(F("Reading data from block ")); Serial.print(block);
-                //     Serial.println(F(" ..."));
-                //     status = m_pRfReader->MIFARE_Read(block, buffer, &size);
-                //     if (status != MFRC522::STATUS_OK) {
-                //         Serial.print(F("MIFARE_Read() failed: "));
-                //         Serial.println(m_pRfReader->GetStatusCodeName(status));
-                //     }
-                //     Serial.print(F("Data in block ")); Serial.print(block); Serial.println(F(":"));
-                //     dump_byte_array(buffer, 16); Serial.println();
-                //     Serial.println();
-                // } else if (piccType == MFRC522::PICC_TYPE_MIFARE_UL ) 
-                // {
-                //     byte PSWBuff[] = {0xFF, 0xFF, 0xFF, 0xFF}; //32 bit PassWord default FFFFFFFF
-                //     byte pACK[] = {0, 0}; //16 bit PassWord ACK returned by the NFCtag
-
-                //     block = 26;
-                //     // Authenticate using key A
-                //     Serial.println(F("Authenticating using key A..."));
-                //     status = m_pRfReader->PCD_NTAG216_AUTH(&PSWBuff[0], pACK);
-                //     if (status != MFRC522::STATUS_OK) {
-                //         Serial.print(F("PCD_Authenticate() failed: "));
-                //         Serial.println(m_pRfReader->GetStatusCodeName(status));
-                //         //return;
-                //     }
-
-                //     Serial.print(F("Reading data from block ")); Serial.print(block);
-                //     Serial.println(F(" ..."));
-                //     status = m_pRfReader->MIFARE_Read(block, buffer, &size);
-                //     if (status != MFRC522::STATUS_OK) {
-                //         Serial.print(F("MIFARE_Read() failed: "));
-                //         Serial.println(m_pRfReader->GetStatusCodeName(status));
-                //     }
-                //     Serial.print(F("Data in block ")); Serial.print(block); Serial.println(F(":"));
-                //     dump_byte_array(buffer, 16); Serial.println();
-                //     Serial.println();
-
-                //     byte WBuff[] = {0x01, 0x02, 0x03, 0x04};
-                //     status = m_pRfReader->MIFARE_Ultralight_Write(block, WBuff, 4);  //How to write to a page
-
-                //     if (status != MFRC522::STATUS_OK) {
-                //         Serial.print(F("MIFARE_Ultralight_Write() failed: "));
-                //         Serial.println(m_pRfReader->GetStatusCodeName(status));
-                //     }
-
-                //     Serial.print(F("Reading data from block ")); Serial.print(block);
-                //     Serial.println(F(" ..."));
-                //     status = m_pRfReader->MIFARE_Read(block, buffer, &size);
-                //     if (status != MFRC522::STATUS_OK) {
-                //         Serial.print(F("MIFARE_Read() failed: "));
-                //         Serial.println(m_pRfReader->GetStatusCodeName(status));
-                //     }
-                //     Serial.print(F("Data in block ")); Serial.print(block); Serial.println(F(":"));
-                //     dump_byte_array(buffer, 16); Serial.println();
-                //     Serial.println();
-
-
-                // }
 
 
             }
@@ -205,6 +129,9 @@ bool UserInterface::ReadInformationFromTag() {
     {
         m_MFRC522Key.keyByte[i] = 0xFF;
     }
+
+    //mark the data set as invalid
+    m_NfcTag.TagValid = false;
 
     // Show some details of the PICC (that is: the tag/card)
     DumpByteArray("Card UID:", m_pRfReader->uid.uidByte, m_pRfReader->uid.size);
@@ -341,6 +268,7 @@ bool UserInterface::ReadInformationFromTag() {
                 
                 ESP_LOGD(TAG, "Read target String: \"%s\"", m_NfcTag.pTarget);
 
+                m_NfcTag.TagValid = true;
             }
             else 
             {
@@ -363,6 +291,13 @@ FinishReadInformation:
     //end communication with the card
     m_pRfReader->PICC_HaltA();
     m_pRfReader->PCD_StopCrypto1();
+
+    if ((m_NfcTag.pTarget != NULL)&&(m_NfcTag.TagValid == false))
+    {
+        free(m_NfcTag.pTarget);
+        m_NfcTag.pTarget = NULL;
+    }
+
     return result;
 }
 
@@ -481,7 +416,52 @@ void UserInterface::CleanUp( void )
 
 }
 
-void UserInterface::setQueue( QueueHandle_t *pQueue )
-{
-    this->m_pPlayerQueue = pQueue;
-}
+
+                
+                // } else if (piccType == MFRC522::PICC_TYPE_MIFARE_UL ) 
+                // {
+                //     byte PSWBuff[] = {0xFF, 0xFF, 0xFF, 0xFF}; //32 bit PassWord default FFFFFFFF
+                //     byte pACK[] = {0, 0}; //16 bit PassWord ACK returned by the NFCtag
+
+                //     block = 26;
+                //     // Authenticate using key A
+                //     Serial.println(F("Authenticating using key A..."));
+                //     status = m_pRfReader->PCD_NTAG216_AUTH(&PSWBuff[0], pACK);
+                //     if (status != MFRC522::STATUS_OK) {
+                //         Serial.print(F("PCD_Authenticate() failed: "));
+                //         Serial.println(m_pRfReader->GetStatusCodeName(status));
+                //         //return;
+                //     }
+
+                //     Serial.print(F("Reading data from block ")); Serial.print(block);
+                //     Serial.println(F(" ..."));
+                //     status = m_pRfReader->MIFARE_Read(block, buffer, &size);
+                //     if (status != MFRC522::STATUS_OK) {
+                //         Serial.print(F("MIFARE_Read() failed: "));
+                //         Serial.println(m_pRfReader->GetStatusCodeName(status));
+                //     }
+                //     Serial.print(F("Data in block ")); Serial.print(block); Serial.println(F(":"));
+                //     dump_byte_array(buffer, 16); Serial.println();
+                //     Serial.println();
+
+                //     byte WBuff[] = {0x01, 0x02, 0x03, 0x04};
+                //     status = m_pRfReader->MIFARE_Ultralight_Write(block, WBuff, 4);  //How to write to a page
+
+                //     if (status != MFRC522::STATUS_OK) {
+                //         Serial.print(F("MIFARE_Ultralight_Write() failed: "));
+                //         Serial.println(m_pRfReader->GetStatusCodeName(status));
+                //     }
+
+                //     Serial.print(F("Reading data from block ")); Serial.print(block);
+                //     Serial.println(F(" ..."));
+                //     status = m_pRfReader->MIFARE_Read(block, buffer, &size);
+                //     if (status != MFRC522::STATUS_OK) {
+                //         Serial.print(F("MIFARE_Read() failed: "));
+                //         Serial.println(m_pRfReader->GetStatusCodeName(status));
+                //     }
+                //     Serial.print(F("Data in block ")); Serial.print(block); Serial.println(F(":"));
+                //     dump_byte_array(buffer, 16); Serial.println();
+                //     Serial.println();
+
+
+                // }
