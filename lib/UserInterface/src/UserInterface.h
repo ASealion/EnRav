@@ -45,11 +45,22 @@
                 bool                    TagValid;
             } nfcTag_s;
 
+            enum CardStatus {
+                NoCard,
+                ValidCard,
+                UnknownCard,
+            };
+
             TaskHandle_t            m_handle;
             QueueHandle_t           *m_pPlayerQueue;
             MFRC522                 *m_pRfReader;
             MFRC522::MIFARE_Key     m_MFRC522Key;
             nfcTag_s                m_NfcTag;
+
+            enum CardStatus         m_CardStatus;
+            byte                    m_lastCardUid[10];
+            uint8_t                 m_lastCardUidSize;
+
 
             static const    uint32_t    magicKey = 0x13374258;
 
