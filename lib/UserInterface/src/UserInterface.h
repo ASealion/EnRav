@@ -11,9 +11,12 @@
         #define     INFORMATION_BLOCK_MIFARE_1K         4
         #define     INFORMATION_BLOCK_MIFARE_ULTRA      8
 
-        #define     TARGET_BLOCK_MIFARE_1K              8
-        #define     TARGET_BLOCK_MIFARE_ULTRA
+        #define     INFORMATION_BLOCK_SIZE              16
 
+
+        #define     TARGET_BLOCK_MIFARE_1K              8
+        #define     TARGET_BLOCK_MIFARE_ULTRA           16
+   
         public:
             // Constructor.  Only sets pin values.  Doesn't touch the chip.  Be sure to call begin()!
             UserInterface(uint8_t cs, uint8_t rst);
@@ -37,8 +40,7 @@
                             uint32_t    LastFilePosition;   // 4 byte
                         } MetaData;
                     }Entry;                             // complete 16 byte
-                    uint8_t             Raw16[16];
-                    uint8_t             Raw4[4][4];
+                    uint8_t             Raw[16];
                 }Information;
 
                 char                    *pTarget;
