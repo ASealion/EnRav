@@ -11,7 +11,9 @@
     static const char *TAG = "main";
 #endif
 
-#include "credentials.h"
+#if __has_include("credentials.h")
+    #include "credentials.h"
+#endif
 
 #ifndef __CREDENTIALS__H
     String ssid =     "WLAN";
