@@ -4,7 +4,6 @@
     #include "Arduino.h"    
 
     #include "cardHandler.h"
-    #include "SimpleCLI.h"
 
     #include "mp3player.h"
 
@@ -59,7 +58,7 @@
             // out own task and command stuff
             TaskHandle_t            m_handle;
             QueueHandle_t           m_InterfaceCommandQueue;
-    simplecli::SimpleCLI* cli;
+
             //internal functions
             void run( void );
             void cleanUp( void );

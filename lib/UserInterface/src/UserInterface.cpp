@@ -1,8 +1,6 @@
 #include "UserInterface.h"
 #include "pinout.h"
 
-using namespace simplecli;
-
 #ifdef ARDUINO_ARCH_ESP32
     #include "esp32-hal-log.h"
 #else
@@ -50,24 +48,6 @@ void UserInterface::begin( void )
 
     m_CardHandler.connectCardReader();
 
-    // =========== Create CommandParser =========== //
-    cli = new SimpleCLI();
-
-    // when no valid command could be found for given user input
-    cli->onNotFound = [](String str) {
-                          Serial.println("\"" + str + "\" not found");
-                      };
-    // ============================================ //
-
-
-    // =========== Add hello command ========== //
-    // hello => hello world!
-    cli->addCmd(new Command("hello", [](Cmd* cmd) {
-        Serial.println("hello world");
-    }));
-    // ======================================== //
-
-
     //create the task that will handle all user interactions
     xTaskCreate(
                     TaskFunctionAdapter,        /* Task function. */
@@ -110,19 +90,7 @@ void UserInterface::run( void )
 
 
         //serve command interface
-    // read serial input
-    if (Serial.available()) {
-        String tmp = Serial.readStringUntil('\n');
-
-        if (tmp.length() > 0) {
-            // print input
-            Serial.print("# ");
-            Serial.println(tmp);
-
-            // and parse it
-            cli->parse(tmp);
-        }
-    }
+        
 
         //handle RFID-Cards        
         switch (m_CardStatus)
