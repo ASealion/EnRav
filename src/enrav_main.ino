@@ -23,10 +23,11 @@
 #endif
 
 UserInterface   myInterface;
-//Mp3player       MyPlayer(VS1053_CS, VS1053_DCS, VS1053_DREQ);
+Mp3player       MyPlayer(VS1053_CS, VS1053_DCS, VS1053_DREQ);
 
 QueueHandle_t   PlayerCommandQueue;
 
+String Version = "EnRav 0.10.0";
 
 //The setup function is called once at startup of the sketch
 void setup() {
@@ -41,16 +42,16 @@ void setup() {
     myInterface.setPlayerCommandQueue(&PlayerCommandQueue);
     myInterface.begin();
 
-//    SD.begin(SDCARD_CS);
+    SD.begin(SDCARD_CS);
 
-//    MyPlayer.begin(&PlayerCommandQueue);
+    MyPlayer.begin(&PlayerCommandQueue);
 
     // WiFi.disconnect();
     // WiFi.mode(WIFI_STA);
     // WiFi.begin(ssid.c_str(), password.c_str());
     // while (WiFi.status() != WL_CONNECTED) delay(1500);
 
-
+    Serial.print(Version);
 }
 
 
@@ -58,9 +59,6 @@ void setup() {
 void loop()
 {
     delay(100);
-
-
-
 
 
 //     // Check for compatibility

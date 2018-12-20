@@ -45,7 +45,7 @@
             CardHandler(MFRC522 *pCardReader);
             ~CardHandler();
 
-            void        connectCardReader(MFRC522 *pCardReader);
+            void        connectCardReader();
 
             bool        IsNewCardPresent( void );
             bool        IsCardPresent(CardSerialNumber *pActualCardSerial);

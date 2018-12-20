@@ -20,13 +20,11 @@ CardHandler::~CardHandler()
 }
 
 
-void CardHandler::connectCardReader(MFRC522 *pCardReader)
+void CardHandler::connectCardReader(void)
 {
     String myVersion;
 
-    ESP_LOGD(TAG, "Connecting RFID reader...");    
-
-    m_pRfReader = pCardReader;
+    ESP_LOGD(TAG, "Connecting RFID reader...");
 
     m_pRfReader->PCD_Init();                // Init MFRC522
 
