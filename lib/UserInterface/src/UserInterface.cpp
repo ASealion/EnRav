@@ -45,8 +45,10 @@ void UserInterface::begin( void )
     //check the settings
     if (m_pPlayerQueue == NULL)
     {
-        ESP_LOGE(TAG, "Could not start without MP3 Player");
+        ESP_LOGE(TAG, "Could not start without MP3 Player Queue");
     }
+
+    m_CardHandler.connectCardReader();
 
     // =========== Create CommandParser =========== //
     cli = new SimpleCLI();

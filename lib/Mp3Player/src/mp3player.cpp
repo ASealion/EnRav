@@ -45,7 +45,7 @@ void Mp3player::Run( void ) {
 
     m_pPlayer->begin();
     m_pPlayer->setVolume(15);
-    m_pPlayer->connecttoSD("/01.mp3"); // SD card
+    //m_pPlayer->connecttoSD("/01.mp3"); // SD card
 
     //mp3.begin();
     //mp3.setVolume(volume);
