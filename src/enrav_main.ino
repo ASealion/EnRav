@@ -7,6 +7,9 @@
 
 #include "pinout.h"
 
+#include "SimpleCLI.h"
+using namespace simplecli;
+
 #ifdef ARDUINO_ARCH_ESP32
     #include "esp32-hal-log.h"
 #else
@@ -26,6 +29,9 @@ UserInterface   myInterface;
 Mp3player       MyPlayer(VS1053_CS, VS1053_DCS, VS1053_DREQ);
 
 QueueHandle_t   PlayerCommandQueue;
+
+// create an instance of it
+SimpleCLI* cli;
 
 String Version = "EnRav 0.10.0";
 
@@ -51,7 +57,41 @@ void setup() {
     // WiFi.begin(ssid.c_str(), password.c_str());
     // while (WiFi.status() != WL_CONNECTED) delay(1500);
 
-    Serial.print(Version);
+    // =========== Create CommandParser =========== //
+    cli = new SimpleCLI();
+
+    // when no valid command could be found for given user input
+    cli->onNotFound = [](String str) {
+                          Serial.println("\"" + str + "\" not found");
+                      };
+    // ============================================ //
+
+
+    // =========== Add hello command ========== //
+    // hello => hello world!
+    cli->addCmd(new Command("hello", [](Cmd* cmd) {
+        Serial.println("hello world");
+    }));
+    // ======================================== //
+
+    // =========== Add hello command ========== //
+    // hello => hello world!
+    cli->addCmd(new Command("stop", [](Cmd* cmd) {
+        PlayerControlMessage_s newMessage = { .Command = CMD_STOP };
+
+        // the message is copied to the queue, so no need for the original one :)
+        if (xQueueSend( PlayerCommandQueue, &newMessage, ( TickType_t ) 0 ) )
+        {
+            ESP_LOGD(TAG, "Send Stop Command to queue");
+        } else {
+            ESP_LOGE(TAG, "Send to queue failed");
+        }
+    }));
+    // ======================================== //
+
+    Serial.print(Version + "\r\n");
+
+    https://github.com/scogswell/ArduinoSerialCommand/blob/master/examples/SerialCommandHardwareOnlyExample/SerialCommandHardwareOnlyExample.ino
 }
 
 
@@ -60,6 +100,19 @@ void loop()
 {
     delay(100);
 
+    // read serial input
+    if (Serial.available()) {
+        String tmp = Serial.readStringUntil('\n');
+
+        if (tmp.length() > 0) {
+            // print input
+            Serial.print("# ");
+            Serial.println(tmp);
+
+            // and parse it
+            cli->parse(tmp);
+        }
+    }
 
 //     // Check for compatibility
 //     if (    piccType != MFRC522::PICC_TYPE_MIFARE_MINI
