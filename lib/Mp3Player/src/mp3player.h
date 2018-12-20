@@ -20,7 +20,7 @@
 
     typedef struct {
         PlayerCommand_e Command;
-        char           *pFileToPlay;
+        String         *pFileToPlay;
     } PlayerControlMessage_s;
 
     class Mp3player

@@ -5,24 +5,25 @@
 #include "mp3player.h"
 #include "UserInterface.h"
 
+#include "pinout.h"
+
 #ifdef ARDUINO_ARCH_ESP32
     #include "esp32-hal-log.h"
 #else
     static const char *TAG = "main";
 #endif
 
-#include "credentials.h"
-#include "pinout.h"
+#if __has_include("credentials.h")
+    #include "credentials.h"
+#endif
 
 #ifndef __CREDENTIALS__H
     String ssid =     "WLAN";
     String password = "xxxxxxxxxxxxxxxx";
 #endif
 
-int volume=15;
-
-UserInterface   myInterface(MFRC522_CS, MFRC522_RST);
-Mp3player       MyPlayer(VS1053_CS, VS1053_DCS, VS1053_DREQ);
+UserInterface   myInterface;
+//Mp3player       MyPlayer(VS1053_CS, VS1053_DCS, VS1053_DREQ);
 
 QueueHandle_t   PlayerCommandQueue;
 
@@ -36,11 +37,13 @@ void setup() {
 
     SPI.begin(SPI_CLK, SPI_MISO, SPI_MOSI);
 
-    myInterface.begin(&PlayerCommandQueue);
+    //prepare the user interface    
+    myInterface.setPlayerCommandQueue(&PlayerCommandQueue);
+    myInterface.begin();
 
-    SD.begin(SDCARD_CS);
+//    SD.begin(SDCARD_CS);
 
-    MyPlayer.begin(&PlayerCommandQueue);
+//    MyPlayer.begin(&PlayerCommandQueue);
 
     // WiFi.disconnect();
     // WiFi.mode(WIFI_STA);
@@ -54,11 +57,6 @@ void setup() {
 // The loop function is called in an endless loop
 void loop()
 {
-    // Prepare key - all keys are set to FFFFFFFFFFFFh at chip delivery from the factory.
-    // MFRC522::MIFARE_Key key;
-    // for (byte i = 0; i < 6; i++) key.keyByte[i] = 0xFF;
-
-
     delay(100);
 
 
