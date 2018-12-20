@@ -71,9 +71,9 @@ void Mp3player::Run( void ) {
                 {
                     ESP_LOGD(TAG, "Received Path %s", PlayerControlMessage.pFileToPlay);
 
-                    m_pPlayer->connecttoSD(PlayerControlMessage.pFileToPlay); 
+                    m_pPlayer->connecttoSD(PlayerControlMessage.pFileToPlay->c_str()); 
 
-                    free(PlayerControlMessage.pFileToPlay);
+                    delete(PlayerControlMessage.pFileToPlay);
 
                 }
             }
