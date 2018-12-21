@@ -89,9 +89,6 @@ void UserInterface::run( void )
         //check GyroSensor
 
 
-        //serve command interface
-        
-
         //handle RFID-Cards        
         switch (m_CardStatus)
         {
@@ -117,7 +114,7 @@ void UserInterface::run( void )
                             if (m_pPlayerQueue != NULL)
                             {
                                 // stop playback
-                                PlayerControlMessage_s newMessage = { .Command = CMD_STOP };
+                                Mp3player::PlayerControlMessage_s newMessage = { .Command = Mp3player::CMD_STOP };
 
                                 // the message is copied to the queue, so no need for the original one :)
                                 if (xQueueSend( *m_pPlayerQueue, &newMessage, ( TickType_t ) 0 ) )
@@ -183,7 +180,7 @@ void UserInterface::run( void )
 
                                     if (m_pPlayerQueue != NULL) 
                                     {
-                                        PlayerControlMessage_s newMessage = { .Command = CMD_PLAY_FILE };
+                                        Mp3player::PlayerControlMessage_s newMessage = { .Command = Mp3player::CMD_PLAY_FILE };
 
                                         //create a new String Object and attach the pointer to the new message
                                         newMessage.pFileToPlay = new String(m_CardData.m_fileName);
@@ -228,10 +225,43 @@ void UserInterface::run( void )
                 break;
         }
 
-        //check for external commands
+        //check for "external" commands
         if( xQueueReceive( m_InterfaceCommandQueue, &(InterfaceCommandMessage), ( TickType_t ) 0 ) ) 
         {
+            ESP_LOGD(TAG, "Received Command %u", InterfaceCommandMessage.Command);
+            
+                // CMD_UNKNOWN,
+                // CMD_SET_VOLUME,
+                // CMD_VOLUME_UP, 
+                // CMD_VOLUME_DOWN,
+                
+                // CMD_CARD_WRITE,
 
+                // CMD_PLAY_FILE,
+                // CMD_PLAY_STOP,
+            if (InterfaceCommandMessage.Command == UserInterface::CMD_PLAY_FILE) 
+            {
+                //make sure the file exists
+                if (InterfaceCommandMessage.pData != NULL)
+                {
+                    String *pFileName = (String *) InterfaceCommandMessage.pData;
+
+                    ESP_LOGV(TAG, "Received FileName %s", pFileName->c_str());
+
+                    //TODO create "next" message
+
+                    delete (String*) InterfaceCommandMessage.pData;
+                }
+            }
+            else if (InterfaceCommandMessage.Command == UserInterface::CMD_PLAY_STOP) 
+            {
+                ESP_LOGV(TAG, "Received stop");
+
+                //TODO create "next" message
+                                
+            } else {
+                ESP_LOGW(TAG, "Unknown command reveived!");
+            }
         }
 
         delay(5);        

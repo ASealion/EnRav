@@ -523,7 +523,7 @@ bool CardHandler::WriteCardInformation(CardData *pSource)
         //     status = m_pRfReader->PCD_NTAG216_AUTH(m_MFRC522Key.keyByte, pACK);
         // }
 
-        ESP_LOGV(TAG, "Writing information to block %u", block);
+        ESP_LOGV(TAG, "Writing information to block %u", startBlockNumber);
         status = m_pRfReader->MIFARE_Write(startBlockNumber, cardDataBlock.Raw, cardBlockSize);
 
 
