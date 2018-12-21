@@ -11,7 +11,7 @@
 using namespace simplecli;
 
 #ifdef ARDUINO_ARCH_ESP32
-    #include "esp32-hal-log.h"
+    #include "esp32-hal-log.h"    
 #else
     static const char *TAG = "main";
 #endif
@@ -28,17 +28,19 @@ using namespace simplecli;
 UserInterface   myInterface;
 Mp3player       MyPlayer(VS1053_CS, VS1053_DCS, VS1053_DREQ);
 
-QueueHandle_t   PlayerCommandQueue;
+QueueHandle_t     PlayerCommandQueue;
+QueueHandle_t   *pCommandInterfaceQueue;
 
-// create an instance of it
-SimpleCLI* cli;
+//
+SimpleCLI       *pCli;
+String          NewCommand;
 
-String Version = "EnRav 0.10.0";
+String Version = "EnRav 0.11.0";
 
 //The setup function is called once at startup of the sketch
 void setup() {
 
-    PlayerCommandQueue = xQueueCreate( 5, sizeof( PlayerControlMessage_s ) );
+    PlayerCommandQueue = xQueueCreate( 5, sizeof( Mp3player::PlayerControlMessage_s ) );
 
     Serial.begin(115200);
 
@@ -46,73 +48,148 @@ void setup() {
 
     //prepare the user interface    
     myInterface.setPlayerCommandQueue(&PlayerCommandQueue);
+    pCommandInterfaceQueue = myInterface.getInterfaceCommandQueue();
     myInterface.begin();
 
     SD.begin(SDCARD_CS);
 
-    MyPlayer.begin(&PlayerCommandQueue);
+//    MyPlayer.begin(&PlayerCommandQueue);
 
     // WiFi.disconnect();
     // WiFi.mode(WIFI_STA);
     // WiFi.begin(ssid.c_str(), password.c_str());
     // while (WiFi.status() != WL_CONNECTED) delay(1500);
 
-    // =========== Create CommandParser =========== //
-    cli = new SimpleCLI();
+    CommandLine_create();
 
-    // when no valid command could be found for given user input
-    cli->onNotFound = [](String str) {
-                          Serial.println("\"" + str + "\" not found");
-                      };
-    // ============================================ //
-
-
-    // =========== Add hello command ========== //
-    // hello => hello world!
-    cli->addCmd(new Command("hello", [](Cmd* cmd) {
-        Serial.println("hello world");
-    }));
-    // ======================================== //
-
-    // =========== Add hello command ========== //
-    // hello => hello world!
-    cli->addCmd(new Command("stop", [](Cmd* cmd) {
-        PlayerControlMessage_s newMessage = { .Command = CMD_STOP };
-
-        // the message is copied to the queue, so no need for the original one :)
-        if (xQueueSend( PlayerCommandQueue, &newMessage, ( TickType_t ) 0 ) )
-        {
-            ESP_LOGD(TAG, "Send Stop Command to queue");
-        } else {
-            ESP_LOGE(TAG, "Send to queue failed");
-        }
-    }));
-    // ======================================== //
-
-    Serial.print(Version + "\r\n");
-
-    https://github.com/scogswell/ArduinoSerialCommand/blob/master/examples/SerialCommandHardwareOnlyExample/SerialCommandHardwareOnlyExample.ino
+    Serial.println(Version);
 }
 
 
 // The loop function is called in an endless loop
 void loop()
 {
-    delay(100);
-
     // read serial input
-    if (Serial.available()) {
-        String tmp = Serial.readStringUntil('\n');
+    while(Serial.available()){
+        char tmp;
+        
+        if (Serial.readBytes(&tmp, 1) >= 1) 
+        {
+            Serial.print(tmp);
 
-        if (tmp.length() > 0) {
-            // print input
-            Serial.print("# ");
-            Serial.println(tmp);
+            NewCommand += String(tmp);
 
-            // and parse it
-            cli->parse(tmp);
+            if (tmp == '\n')
+            {
+               pCli->parse(NewCommand); 
+               NewCommand = String();
+               Serial.print("> ");
+            }
         }
     }
+}
+
+
+void CommandLine_create(void)
+{
+    // =========== Create CommandParser =========== //
+    pCli = new SimpleCLI();
+
+    // when no valid command could be found for given user input
+    pCli->onNotFound = [](String str) {
+                          Serial.println("\"" + str + "\" not found");
+                      };
+    // ============================================ //
+
+    // =========== Add stop command ========== //
+    pCli->addCmd(new EmptyCmd("help", [](Cmd* cmd) {
+        
+        Serial.println("EnRav Audio player (by M. Reinecke)");
+        Serial.println("-----------------------------------");
+        Serial.println("available commands:");
+        Serial.println("- version               : show firmware version");
+        Serial.println("");
+        Serial.println("- play <filename>       : start playing the given file name (must be a mp3 or playlist)");
+        Serial.println("- stop                  : stops the actual playback");
+        Serial.println("");
+        Serial.println("- volume <1..100>       : set volume to level");
+        Serial.println("  volume up             : increase volume by 5 steps");
+        Serial.println("  volume down           : decrease volume by 5 steps");
+        Serial.println("");
+        Serial.println(" - write -f <filename>  :  setup RFID card with the given parameters");
+    }));
+    // ======================================== //
+
+    // =========== Add version info command ========== //
+    pCli->addCmd(new Command("version", [](Cmd* cmd) {
+        Serial.println(Version);
+    }));
+    // ======================================== //
+
+    // =========== Add play command ========== //
+    pCli->addCmd(new SingleArgCmd("play", [](Cmd* cmd) {        
+        String *pFileName = new String(cmd->getValue(0));
+
+        UserInterface::InterfaceCommandMessage_s newMessage =   { 
+                                                                .Command    = UserInterface::CMD_PLAY_FILE,
+                                                                .pData      = pFileName 
+                                                                };
+        // the message is copied to the queue, so no need for the original one :)
+        if (!xQueueSend( *pCommandInterfaceQueue, &newMessage, ( TickType_t ) 0 ) )
+        {
+            ESP_LOGE(TAG, "Send to queue failed");
+            delete(pFileName);
+        }
+    }));
+    // ======================================== //
+
+    // =========== Add stop command ========== //
+    pCli->addCmd(new EmptyCmd("stop", [](Cmd* cmd) {
+        UserInterface::InterfaceCommandMessage_s newMessage = { .Command = UserInterface::CMD_PLAY_STOP };
+
+        // the message is copied to the queue, so no need for the original one :)
+        if (!xQueueSend( *pCommandInterfaceQueue, &newMessage, ( TickType_t ) 0 ) )
+        {
+            ESP_LOGE(TAG, "Send to queue failed");
+        }
+    }));
+    // ======================================== //
+
+    // =========== Add volume command ========== //
+    pCli->addCmd(new SingleArgCmd("volume", [](Cmd* cmd) {        
+        // String *pFileName = new String(cmd->getValue(0));
+    }));
+    // ======================================== //
+
+    // =========== Add write command ========== //
+    pCli->addCmd(new Command("write", [](Cmd* cmd) {        
+        // String *pFileName = new String(cmd->getValue(0));
+    }));
+    // ======================================== //
+
+    // =========== Add change log level command ========== //
+    pCli->addCmd(new SingleArgCmd("log", [](Cmd* cmd) {  
+        String data = cmd->getValue(0);
+
+        if (data.equalsIgnoreCase("DEBUG"))
+        {
+            esp_log_level_set("*", ESP_LOG_DEBUG);
+        } 
+        else if (data.equalsIgnoreCase("VERBOSE"))
+        {
+            esp_log_level_set("*", ESP_LOG_VERBOSE);
+        } 
+        else if (data.equalsIgnoreCase("WARNING"))
+        {
+            esp_log_level_set("*", ESP_LOG_WARN);
+        } 
+        else if (data.equalsIgnoreCase("INFO"))
+        {
+            esp_log_level_set("*", ESP_LOG_INFO);
+        }
+    }));
+    // ======================================== //
+}
 
 //     // Check for compatibility
 //     if (    piccType != MFRC522::PICC_TYPE_MIFARE_MINI
@@ -261,6 +338,3 @@ void loop()
     //     }
     // }
 // }
-
-
-}

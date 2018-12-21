@@ -21,7 +21,10 @@
                 CMD_VOLUME_UP, 
                 CMD_VOLUME_DOWN,
                 
-                CMD_WRITE_CARD,                
+                CMD_CARD_WRITE,
+
+                CMD_PLAY_FILE,
+                CMD_PLAY_STOP,
             } InterfaceCommand_e;
 
             typedef struct {
