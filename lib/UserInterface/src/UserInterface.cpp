@@ -230,35 +230,126 @@ void UserInterface::run( void )
         {
             ESP_LOGD(TAG, "Received Command %u", InterfaceCommandMessage.Command);
             
-                // CMD_UNKNOWN,
-                // CMD_SET_VOLUME,
-                // CMD_VOLUME_UP, 
-                // CMD_VOLUME_DOWN,
-                
-                // CMD_CARD_WRITE,
+            // CMD_SET_VOLUME,
+            if (InterfaceCommandMessage.Command == UserInterface::CMD_SET_VOLUME) 
+            {
+                //make sure there is a volume
+                if (InterfaceCommandMessage.pData != NULL)
+                {
+                    // String *pFileName = (String *) InterfaceCommandMessage.pData;
 
-                // CMD_PLAY_FILE,
-                // CMD_PLAY_STOP,
-            if (InterfaceCommandMessage.Command == UserInterface::CMD_PLAY_FILE) 
+                    // ESP_LOGV(TAG, "Received FileName %s", pFileName->c_str());
+
+                    // //TODO create "next" message
+
+                    // delete (String*) InterfaceCommandMessage.pData;
+                }
+            }
+            // CMD_VOLUME_UP, 
+            else if (InterfaceCommandMessage.Command == UserInterface::CMD_VOLUME_UP) 
+            {
+                //make sure the file exists
+                if (InterfaceCommandMessage.pData != NULL)
+                {
+                    // String *pFileName = (String *) InterfaceCommandMessage.pData;
+
+                    // ESP_LOGV(TAG, "Received FileName %s", pFileName->c_str());
+
+                    // //TODO create "next" message
+
+                    // delete (String*) InterfaceCommandMessage.pData;
+                }
+            }
+            // CMD_VOLUME_DOWN,
+            else if (InterfaceCommandMessage.Command == UserInterface::CMD_VOLUME_DOWN) 
+            {
+                //make sure the file exists
+                if (InterfaceCommandMessage.pData != NULL)
+                {
+                    // String *pFileName = (String *) InterfaceCommandMessage.pData;
+
+                    // ESP_LOGV(TAG, "Received FileName %s", pFileName->c_str());
+
+                    // //TODO create "next" message
+
+                    // delete (String*) InterfaceCommandMessage.pData;
+                }
+            }               
+            // CMD_CARD_WRITE,
+            if (InterfaceCommandMessage.Command == UserInterface::CMD_CARD_WRITE) 
+            {
+                //make sure the file exists
+                if (InterfaceCommandMessage.pData != NULL)
+                {
+                    CardData *pNewCard = (CardData *) InterfaceCommandMessage.pData;
+
+                    //some parts of the structure should be zero if the card is new
+                    pNewCard->m_PlaylistPosition    = 0;
+                    pNewCard->m_TrackPosition       = 0;
+
+                    ESP_LOGD(TAG, "Writing Card for %s", pNewCard->m_fileName.c_str());
+
+                    m_CardHandler.WriteCardInformation(pNewCard);
+
+                    delete (CardData *) InterfaceCommandMessage.pData;
+                }
+            }
+            // CMD_PLAY_FILE,                
+            else if (InterfaceCommandMessage.Command == UserInterface::CMD_PLAY_FILE) 
             {
                 //make sure the file exists
                 if (InterfaceCommandMessage.pData != NULL)
                 {
                     String *pFileName = (String *) InterfaceCommandMessage.pData;
 
-                    ESP_LOGV(TAG, "Received FileName %s", pFileName->c_str());
+                    if ((pFileName->length()) && (m_pPlayerQueue != NULL)) 
+                    {
+                        Mp3player::PlayerControlMessage_s newMessage = { .Command = Mp3player::CMD_PLAY_FILE };
 
-                    //TODO create "next" message
+                        //attach the pointer to the next message
+                        newMessage.pFileToPlay = pFileName;
 
-                    delete (String*) InterfaceCommandMessage.pData;
+                        if (xQueueSend( *m_pPlayerQueue, &newMessage, ( TickType_t ) 0 ) )
+                        {
+                            ESP_LOGD(TAG, "Send \"Play File Message\" for \"%s\" to queue", newMessage.pFileToPlay->c_str());
+                        } 
+                        else 
+                        {
+                            ESP_LOGE(TAG, "Send to player queue failed");
+
+                            // //if the send failed, we must do the job of deleting the string
+                            delete newMessage.pFileToPlay;
+                        }
+                    }
+                    else 
+                    {
+                        delete (String*) InterfaceCommandMessage.pData;
+                    }
                 }
             }
+            // CMD_PLAY_STOP,
             else if (InterfaceCommandMessage.Command == UserInterface::CMD_PLAY_STOP) 
             {
                 ESP_LOGV(TAG, "Received stop");
 
-                //TODO create "next" message
-                                
+                //make sure we have a player queue available
+                if (m_pPlayerQueue != NULL)
+                {
+                    // stop playback
+                    Mp3player::PlayerControlMessage_s newMessage = { .Command = Mp3player::CMD_STOP };
+
+                    // the message is copied to the queue, so no need for the original one :)
+                    if (xQueueSend( *m_pPlayerQueue, &newMessage, ( TickType_t ) 0 ) )
+                    {
+                        ESP_LOGD(TAG, "Send Stop Command to queue");
+                    } else {
+                        ESP_LOGE(TAG, "Send to queue failed");
+                    }
+                }
+                else
+                {
+                    ESP_LOGW(TAG, "No Player Queue");
+                }                                
             } else {
                 ESP_LOGW(TAG, "Unknown command reveived!");
             }

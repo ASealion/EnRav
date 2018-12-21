@@ -32,10 +32,10 @@ QueueHandle_t     PlayerCommandQueue;
 QueueHandle_t   *pCommandInterfaceQueue;
 
 //
-SimpleCLI       *pCli;
-String          NewCommand;
+SimpleCLI       *pCli;          // pointer to command line handler
+String          NewCommand;     // string to collect characters from the input
 
-String Version = "EnRav 0.11.0";
+String Version = "EnRav 0.12.0";
 
 //The setup function is called once at startup of the sketch
 void setup() {
@@ -116,7 +116,7 @@ void CommandLine_create(void)
         Serial.println("  volume up             : increase volume by 5 steps");
         Serial.println("  volume down           : decrease volume by 5 steps");
         Serial.println("");
-        Serial.println(" - write -f <filename>  :  setup RFID card with the given parameters");
+        Serial.println(" - write <filename>     :  setup RFID card with the given parameters");
     }));
     // ======================================== //
 
@@ -138,7 +138,7 @@ void CommandLine_create(void)
         if (!xQueueSend( *pCommandInterfaceQueue, &newMessage, ( TickType_t ) 0 ) )
         {
             ESP_LOGE(TAG, "Send to queue failed");
-            delete(pFileName);
+            delete pFileName;
         }
     }));
     // ======================================== //
@@ -162,9 +162,35 @@ void CommandLine_create(void)
     // ======================================== //
 
     // =========== Add write command ========== //
-    pCli->addCmd(new Command("write", [](Cmd* cmd) {        
-        // String *pFileName = new String(cmd->getValue(0));
-    }));
+    Command* writeCard = new Command("write", [](Cmd* cmd) {
+        String fileName = cmd->getValue(0);
+
+        if (fileName.length() > 0) 
+        {
+            UserInterface::InterfaceCommandMessage_s newMessage;
+            CardData  *pNewCard = new CardData();
+
+            //save the data to the stucture
+            pNewCard->m_fileName = fileName;
+
+            //and fill the message to the interface
+            newMessage.Command    = UserInterface::CMD_CARD_WRITE;
+            newMessage.pData      = pNewCard ;
+
+            // the message is copied to the queue, so no need for the original one :)
+            if (!xQueueSend( *pCommandInterfaceQueue, &newMessage, ( TickType_t ) 0 ) )
+            {
+                ESP_LOGE(TAG, "Send to queue failed");
+                delete pNewCard;
+            }            
+        } 
+        else 
+        {
+            Serial.println("Illegal parameter (FileName)");
+        }
+    });    
+    writeCard->addArg(new AnonymReqArg());
+    pCli->addCmd(writeCard);
     // ======================================== //
 
     // =========== Add change log level command ========== //
@@ -188,7 +214,7 @@ void CommandLine_create(void)
             esp_log_level_set("*", ESP_LOG_INFO);
         }
     }));
-    // ======================================== //
+    // ======================================== //    
 }
 
 //     // Check for compatibility
