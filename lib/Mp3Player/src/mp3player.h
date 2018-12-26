@@ -9,23 +9,22 @@
     #include "vs1053_ext.h"
 
 
-
-    typedef enum {
-        CMD_UNKNOWN,
-        CMD_PLAY_FILE,
-        CMD_STOP, 
-        CMD_VOL_UP,
-        CMD_VOL_DOWN,
-    } PlayerCommand_e;
-
-    typedef struct {
-        PlayerCommand_e Command;
-        char           *pFileToPlay;
-    } PlayerControlMessage_s;
-
     class Mp3player
     {
         public:
+            typedef enum {
+                CMD_UNKNOWN,
+                CMD_PLAY_FILE,
+                CMD_STOP, 
+                CMD_VOL_UP,
+                CMD_VOL_DOWN,
+            } PlayerCommand_e;
+
+            typedef struct {
+                PlayerCommand_e Command;
+                String         *pFileToPlay;
+            } PlayerControlMessage_s;
+
             // Constructor.  Only sets pin values.  Doesn't touch the chip.  Be sure to call begin()!
             Mp3player(uint8_t _cs_pin, uint8_t _dcs_pin, uint8_t _dreq_pin);
             ~Mp3player();
