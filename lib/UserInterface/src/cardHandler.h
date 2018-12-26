@@ -53,7 +53,7 @@
             bool        GetCardSerial(CardSerialNumber *pActualCardSerial);
             
             bool        ReadCardInformation(CardData *pTarget);
-            bool        WriteCardInformation(CardData *pSource);
+            bool        WriteCardInformation(CardData *pSource, CardSerialNumber *pActualCardSerial);
             
             void        StopCommunication(void);
 
