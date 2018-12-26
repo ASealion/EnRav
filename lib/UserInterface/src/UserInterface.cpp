@@ -1,6 +1,5 @@
 #include "UserInterface.h"
-#include "mp3player.h"
-#include "Arduino.h"
+#include "pinout.h"
 
 #ifdef ARDUINO_ARCH_ESP32
     #include "esp32-hal-log.h"
@@ -9,9 +8,15 @@
 #endif
 
 
-UserInterface::UserInterface(uint8_t _cs_pin = 21, uint8_t _rst_pin = 19)
+UserInterface::UserInterface() : m_CardHandler()
 {
-    m_pRfReader = new MFRC522(_cs_pin, _rst_pin);
+    m_handle                = NULL;
+    m_CardStatus            = RfidCardStatus::NoCard;
+    m_InterfaceCommandQueue = xQueueCreate( 5, sizeof( InterfaceCommandMessage_s ) );
+
+    // these pointer must be set from "extern"
+    m_pPlayerQueue          = NULL;    
+    
 }
 
 UserInterface::~UserInterface()
@@ -19,17 +24,31 @@ UserInterface::~UserInterface()
 }
 
 
-void UserInterface::begin( QueueHandle_t *pPlayerCommandQueue )
+QueueHandle_t *UserInterface::getInterfaceCommandQueue(void) 
+{
+    return &m_InterfaceCommandQueue;
+}
+
+
+void UserInterface::setPlayerCommandQueue(QueueHandle_t *pCommandQueue)
+{
+    m_pPlayerQueue = pCommandQueue;
+}
+
+
+void UserInterface::begin( void )
 {
     ESP_LOGD(TAG, "Start User Interface Task");
 
-    m_pRfReader->PCD_Init();		            // Init MFRC522
-	m_pRfReader->PCD_DumpVersionToSerial();	// Show details of PCD - MFRC522 Card Reader details
+    //check the settings
+    if (m_pPlayerQueue == NULL)
+    {
+        ESP_LOGE(TAG, "Could not start without MP3 Player Queue");
+    }
 
-    //save the queue where we must send our commands
-    m_pPlayerQueue = pPlayerCommandQueue;
+    m_CardHandler.connectCardReader();
 
-    //create the task that will handle the playback
+    //create the task that will handle all user interactions
     xTaskCreate(
                     TaskFunctionAdapter,        /* Task function. */
                     "UserInterface",       	    /* String with name of task. */
@@ -40,514 +59,334 @@ void UserInterface::begin( QueueHandle_t *pPlayerCommandQueue )
 
 }
 
-
+//we need this function to get called by the "C" RTOS
 void UserInterface::TaskFunctionAdapter(void *pvParameters)
 {
     UserInterface *userInterface = static_cast<UserInterface *>(pvParameters);
 
-    userInterface->Run();
+    userInterface->run();
 
-    userInterface->CleanUp();
+    userInterface->cleanUp();
 
     vTaskDelete(userInterface->m_handle);
 }
 
 
 
-void UserInterface::Run( void ) {
-    
-    ESP_LOGD(TAG, "Thread started");
-
-    //prepare some internal variables
-    m_CardStatus = NoCard;
-
-    //check if the command queue is set
-    if (m_pPlayerQueue == NULL)
-    {
-        ESP_LOGE(TAG, "Player command queue was not defines.");
-        return;
-    }
+void UserInterface::run( void ) 
+{
+    InterfaceCommandMessage_s       InterfaceCommandMessage;
+    ESP_LOGD(TAG, "User Interface Thread started");
 
     while (true)
     {
+        //set/clear LEDs
 
+
+        //check buttons
+
+
+        //check GyroSensor
+
+
+        //handle RFID-Cards        
         switch (m_CardStatus)
         {
-            //Check if the card is still present
-            case ValidCard:
-            case UnknownCard:
+            case RfidCardStatus::UnknownCard:
+            case RfidCardStatus::ValidCard:
+
+                //do this check only if at least 1000ms have elapsed since the last check
+                if (TimeElapsed(m_CardTimestamp) >= 1000)
                 {
-                    bool result = false;
+                    
+                    //remember the new time
+                    m_CardTimestamp = millis();
 
-                    // Since wireless communication is voodoo we'll give it a few retrys before killing the music
-                    for (uint32_t counter = 0; counter < 3; counter++) 
+                    //check if the card was removed
+                    if (m_CardHandler.IsCardPresent(&m_CardSerialNumber) == false)
                     {
-                        // Detect Tag without looking for collisions
-                        byte bufferATQA[2];
-                        byte bufferSize = sizeof(bufferATQA);
-
-                        MFRC522::StatusCode status = m_pRfReader->PICC_WakeupA(bufferATQA, &bufferSize);
-
-                        if (status == MFRC522::STATUS_OK)
+                        //if it was a valid card, we must stop the playback
+                        if (m_CardStatus == RfidCardStatus::ValidCard)
                         {
-                            if (m_pRfReader->PICC_ReadCardSerial() == true) 
+                            ESP_LOGI(TAG,"EnRav Card removed, stopping playback.");
+
+                            //make sure we have a player queue available
+                            if (m_pPlayerQueue != NULL)
                             {
-                                bool uidEqual = true;
+                                // stop playback
+                                Mp3player::PlayerControlMessage_s newMessage = { .Command = Mp3player::CMD_STOP };
 
-                                for (uint32_t count = 0; count < m_lastCardUidSize; count++)
+                                // the message is copied to the queue, so no need for the original one :)
+                                if (xQueueSend( *m_pPlayerQueue, &newMessage, ( TickType_t ) 0 ) )
                                 {
-                                    if (m_pRfReader->uid.uidByte[count] != m_lastCardUid[count])
-                                    {
-                                        uidEqual = false;
-                                        break;
-                                    }
-                                }
-
-                                if (uidEqual == true) 
-                                {
-                                    result = true;
-                                    break;
+                                    ESP_LOGD(TAG, "Send Stop Command to queue");
+                                } else {
+                                    ESP_LOGE(TAG, "Send to queue failed");
                                 }
                             }
-                        }
-                    }
-
-                    //if the card was not found
-                    if (result == false)
-                    {
-                        if (m_CardStatus == CardStatus::ValidCard)
-                        {
-                            ESP_LOGD(TAG,"Card disappeared, stopping playback.");
-
-                            // stop playback
-                            PlayerControlMessage_s myMessage = { .Command = CMD_STOP };
-
-                            if (xQueueSend( *m_pPlayerQueue, &myMessage, ( TickType_t ) 0 ) )
+                            else
                             {
-                                ESP_LOGD(TAG, "send to queue successfull");
-                            } else {
-                                ESP_LOGW(TAG, "send to queue failed");
+                                ESP_LOGW(TAG, "No Player Queue");
                             }
                         }
+                        // if it is an unkown card we must do nothing
                         else 
                         {
-                            ESP_LOGD(TAG,"Card disappeared");
+                            ESP_LOGI(TAG,"Card removed from reader");
                         }
 
-                        m_CardStatus = NoCard;
+                        m_CardStatus = RfidCardStatus::NoCard;
+
+                    } 
+                    else 
+                    {
+                        //end communication with the card
+                        m_CardHandler.StopCommunication();
+                    }
+                }
+
+                break;
+            
+            //there is no known card on the reader
+            case RfidCardStatus::NoCard:
+
+                //do this check only if at least 250ms have elapsed
+                if (TimeElapsed(m_CardTimestamp) >= 250)
+                {
+                    
+                    //remember the new time
+                    m_CardTimestamp = millis();
+
+                    //check if a card is put onto the reader
+                    if ( m_CardHandler.IsNewCardPresent() == true) 
+                    {
+
+                        ESP_LOGD(TAG, "New card detected");
+
+                        m_CardStatus = RfidCardStatus::UnknownCard;
+
+                        // Try to get the serial of the card
+                        if ( m_CardHandler.GetCardSerial(&m_CardSerialNumber)) 
+                        {
+
+                            ESP_LOGI(TAG, "Card Serial is \"%s\"", m_CardSerialNumber.toString().c_str());
+
+                            //try to read the information from the card
+                            if ((m_CardHandler.ReadCardInformation(&m_CardData)) && (m_CardData.GetValid()))
+                            {
+                                ESP_LOGI(TAG, "Valid EnRav tag found");
+                                m_CardStatus = RfidCardStatus::ValidCard;
+
+                                //check options
+
+                                //play file (is set)
+                                if (m_CardData.m_fileName.length()) 
+                                {
+
+                                    if (m_pPlayerQueue != NULL) 
+                                    {
+                                        Mp3player::PlayerControlMessage_s newMessage = { .Command = Mp3player::CMD_PLAY_FILE };
+
+                                        //create a new String Object and attach the pointer to the new message
+                                        newMessage.pFileToPlay = new String(m_CardData.m_fileName);
+
+                                        if (xQueueSend( *m_pPlayerQueue, &newMessage, ( TickType_t ) 0 ) )
+                                        {
+                                            ESP_LOGD(TAG, "Send \"Play File Message\" to queue");
+                                        } else {
+                                            ESP_LOGE(TAG, "Send to player queue failed");
+
+                                            // //if the send failed, we must do the job of deleting the string
+                                            delete(newMessage.pFileToPlay);
+                                        }
+                                    }
+
+                                    ESP_LOGD(TAG, "Requesting file \"%s\"", m_CardData.m_fileName.c_str() );
+                                }
+
+                                //check playlist position
+
+
+                                //check file position
+
+                            } 
+                            else 
+                            {
+                                ESP_LOGI(TAG, "No valid tag found / could no read information");
+                                m_CardStatus = RfidCardStatus::UnknownCard;
+                            }
+                        } // serial read
+
+                        // end communication with the card
+                        m_CardHandler.StopCommunication();
+
+                    } // new card found
+                } // time elapsed
+
+               break;
+            default:
+                m_CardStatus = RfidCardStatus::NoCard;
+                ESP_LOGE(TAG, "illegal rfid card status");
+                break;
+        }
+
+        //check for "external" commands
+        if( xQueueReceive( m_InterfaceCommandQueue, &(InterfaceCommandMessage), ( TickType_t ) 0 ) ) 
+        {
+            ESP_LOGD(TAG, "Received Command %u", InterfaceCommandMessage.Command);
+            
+            // CMD_SET_VOLUME,
+            if (InterfaceCommandMessage.Command == UserInterface::CMD_SET_VOLUME) 
+            {
+                //make sure there is a volume
+                if (InterfaceCommandMessage.pData != NULL)
+                {
+                    // String *pFileName = (String *) InterfaceCommandMessage.pData;
+
+                    // ESP_LOGV(TAG, "Received FileName %s", pFileName->c_str());
+
+                    // //TODO create "next" message
+
+                    // delete (String*) InterfaceCommandMessage.pData;
+                }
+            }
+            // CMD_VOLUME_UP, 
+            else if (InterfaceCommandMessage.Command == UserInterface::CMD_VOLUME_UP) 
+            {
+                //make sure the file exists
+                if (InterfaceCommandMessage.pData != NULL)
+                {
+                    // String *pFileName = (String *) InterfaceCommandMessage.pData;
+
+                    // ESP_LOGV(TAG, "Received FileName %s", pFileName->c_str());
+
+                    // //TODO create "next" message
+
+                    // delete (String*) InterfaceCommandMessage.pData;
+                }
+            }
+            // CMD_VOLUME_DOWN,
+            else if (InterfaceCommandMessage.Command == UserInterface::CMD_VOLUME_DOWN) 
+            {
+                //make sure the file exists
+                if (InterfaceCommandMessage.pData != NULL)
+                {
+                    // String *pFileName = (String *) InterfaceCommandMessage.pData;
+
+                    // ESP_LOGV(TAG, "Received FileName %s", pFileName->c_str());
+
+                    // //TODO create "next" message
+
+                    // delete (String*) InterfaceCommandMessage.pData;
+                }
+            }               
+            // CMD_CARD_WRITE,
+            if (InterfaceCommandMessage.Command == UserInterface::CMD_CARD_WRITE) 
+            {
+                //make sure the file exists
+                if (InterfaceCommandMessage.pData != NULL)
+                {
+                    CardData *pNewCard = (CardData *) InterfaceCommandMessage.pData;
+
+                    //some parts of the structure should be zero if the card is new
+                    pNewCard->m_PlaylistPosition    = 0;
+                    pNewCard->m_TrackPosition       = 0;
+
+                    ESP_LOGD(TAG, "Writing Card for %s", pNewCard->m_fileName.c_str());
+
+                    if (m_CardHandler.WriteCardInformation(pNewCard, &m_CardSerialNumber)) 
+                    {
+                        ESP_LOGI(TAG, "Wrote card successfully");
                     } 
                     else
                     {
-                        delay(1000);
+                        ESP_LOGW(TAG, "Wrote card FAILED");
                     }
-                    break;
+
+                    delete (CardData *) InterfaceCommandMessage.pData;
                 }
-            case NoCard:
-
-                // Look for new cards
-                if ( m_pRfReader->PICC_IsNewCardPresent() == true) 
+            }
+            // CMD_PLAY_FILE,                
+            else if (InterfaceCommandMessage.Command == UserInterface::CMD_PLAY_FILE) 
+            {
+                //make sure the file exists
+                if (InterfaceCommandMessage.pData != NULL)
                 {
+                    String *pFileName = (String *) InterfaceCommandMessage.pData;
 
-                    ESP_LOGI(TAG, "New card detected");
-                    m_CardStatus = CardStatus::ValidCard;
-
-                    // Select one of the cards
-                    if ( m_pRfReader->PICC_ReadCardSerial()) 
+                    if ((pFileName->length()) && (m_pPlayerQueue != NULL)) 
                     {
-                        // Show some details of the PICC (that is: the tag/card)
-                        DumpByteArray("Card UID:", m_pRfReader->uid.uidByte, m_pRfReader->uid.size);
+                        Mp3player::PlayerControlMessage_s newMessage = { .Command = Mp3player::CMD_PLAY_FILE };
 
-                        //remember the UID to check if the was removed
-                        m_lastCardUidSize = m_pRfReader->uid.size;
-                        memcpy(m_lastCardUid, m_pRfReader->uid.uidByte, m_lastCardUidSize );
+                        //attach the pointer to the next message
+                        newMessage.pFileToPlay = pFileName;
 
-                        if (this->ReadInformationFromTag() == true) 
+                        if (xQueueSend( *m_pPlayerQueue, &newMessage, ( TickType_t ) 0 ) )
                         {
-                            ESP_LOGD(TAG, "Valid tag found");
-
-                            //check volume
-
-                            //check flags
-
-                            //send filename to player
-                            if (m_NfcTag.pTarget != NULL) 
-                            {
-                                PlayerControlMessage_s myMessage = { .Command = CMD_PLAY_FILE };
-                                myMessage.pFileToPlay = m_NfcTag.pTarget;
-
-                                if (xQueueSend( *m_pPlayerQueue, &myMessage, ( TickType_t ) 0 ) )
-                                {
-                                    ESP_LOGD(TAG, "send to queue successfull");
-                                } else {
-                                    ESP_LOGW(TAG, "send to queue failed");
-
-                                    //if the send failed, we must do the job
-                                    free(m_NfcTag.pTarget);
-                                }
-
-                                //if successful or not, our pointer to the file is no longer needed
-                                m_NfcTag.pTarget = NULL;
-                            }
+                            ESP_LOGD(TAG, "Send \"Play File Message\" for \"%s\" to queue", newMessage.pFileToPlay->c_str());
                         } 
                         else 
                         {
-                            ESP_LOGI(TAG, "No valid tag found / could no read information");
-                            m_CardStatus = CardStatus::UnknownCard;
-                        }
+                            ESP_LOGE(TAG, "Send to player queue failed");
 
-                        //end communication with the card
-                        m_pRfReader->PICC_HaltA();
-                        m_pRfReader->PCD_StopCrypto1();
+                            // //if the send failed, we must do the job of deleting the string
+                            delete newMessage.pFileToPlay;
+                        }
+                    }
+                    else 
+                    {
+                        delete (String*) InterfaceCommandMessage.pData;
                     }
                 }
-
-                //wait 250ms before we check again for a new card
-                delay(250);
-
-                break;
-
-            default:
-                m_CardStatus = UserInterface::NoCard;
-                ESP_LOGW(TAG, "illegal card status");
-                break;
-        };
-    };
-}
-
-
-bool UserInterface::ReadInformationFromTag() {
-    bool                    result = false;
-    MFRC522::StatusCode     status;
-    MFRC522::PICC_Type      piccType;
-
-    //prepare the default key
-    for (byte i = 0; i < 6; i++)
-    {
-        m_MFRC522Key.keyByte[i] = 0xFF;
-    }
-
-    //mark the data set as invalid
-    m_NfcTag.TagValid = false;
-
-    //check the type
-    piccType = m_pRfReader->PICC_GetType(m_pRfReader->uid.sak);
-    ESP_LOGD(TAG, "PICC type: %s", m_pRfReader->PICC_GetTypeName(piccType));
-
-    if ((piccType == MFRC522::PICC_TYPE_MIFARE_MINI ) ||
-        (piccType == MFRC522::PICC_TYPE_MIFARE_1K ) ||
-        (piccType == MFRC522::PICC_TYPE_MIFARE_4K ) )
-    {
-        uint8_t     block = INFORMATION_BLOCK_MIFARE_1K;
-        uint8_t     sizeInformation = sizeof(m_NfcTag.Information.Raw16);
-        uint8_t     buffer[18];
-        uint8_t     sizeBuffer = sizeof(buffer);
-
-        // Authenticate using key A
-        ESP_LOGV(TAG, "Authenticating using key A...");
-        status = m_pRfReader->PCD_Authenticate(MFRC522::PICC_CMD_MF_AUTH_KEY_A, block, &m_MFRC522Key, &(m_pRfReader->uid));
-        if (status != MFRC522::STATUS_OK) {
-            ESP_LOGW(TAG, "PCD_Authenticate() failed: %s", m_pRfReader->GetStatusCodeName(status));
-            goto FinishReadInformation;
-        }
-
-        //check if the union has the correct size
-        if (sizeof(m_NfcTag.Information.Entry) != sizeInformation)
-        {
-            ESP_LOGE(TAG, "Information structure size is not equal to the readout array! (%u instead of %u)", sizeof(m_NfcTag.Information.Entry), sizeInformation);
-            goto FinishReadInformation;
-        }
-
-        // read information blocks 
-        ESP_LOGV(TAG, "Reading data from block %u ...", block);
-
-        if (sizeInformation != 16) 
-        {
-            ESP_LOGE(TAG, "Information structure has the wrong size! (%u instead of %u)", sizeInformation, 16);
-            goto FinishReadInformation;
-        }
-
-        status = m_pRfReader->MIFARE_Read(block, buffer, &sizeBuffer);
-        if (status != MFRC522::STATUS_OK) 
-        {
-            ESP_LOGW(TAG, "MIFARE_Read() failed: %s", m_pRfReader->GetStatusCodeName(status));
-            goto FinishReadInformation;
-        }
-        
-        //reading was successfull, we could copy the data into our own structure
-        memcpy(m_NfcTag.Information.Raw16, buffer, sizeInformation);
-
-        DumpByteArray("Data in block :", m_NfcTag.Information.Raw16, sizeInformation);
-
-        if (m_NfcTag.Information.Entry.Header.Cookie == magicKey) 
-        {
-            //check the header version
-            if (m_NfcTag.Information.Entry.Header.Version == 1)
+            }
+            // CMD_PLAY_STOP,
+            else if (InterfaceCommandMessage.Command == UserInterface::CMD_PLAY_STOP) 
             {
-                ESP_LOGD(TAG, "Handling Information Version 1");
+                ESP_LOGV(TAG, "Received stop");
 
-                //read target from card
-
-                //reserve some memory for the string and fill it with '0'
-                m_NfcTag.pTarget = (char *) malloc((m_NfcTag.Information.Entry.MetaData.TargetLength + 1) * sizeof(char));
-                memset(m_NfcTag.pTarget, 0 , (m_NfcTag.Information.Entry.MetaData.TargetLength + 1) * sizeof(char));
-
-                if (m_NfcTag.pTarget == NULL)
+                //make sure we have a player queue available
+                if (m_pPlayerQueue != NULL)
                 {
-                    ESP_LOGE(TAG, "Could not allocate memory for file-name.");
-                    goto FinishReadInformation;
+                    // stop playback
+                    Mp3player::PlayerControlMessage_s newMessage = { .Command = Mp3player::CMD_STOP };
+
+                    // the message is copied to the queue, so no need for the original one :)
+                    if (xQueueSend( *m_pPlayerQueue, &newMessage, ( TickType_t ) 0 ) )
+                    {
+                        ESP_LOGD(TAG, "Send Stop Command to queue");
+                    } else {
+                        ESP_LOGE(TAG, "Send to queue failed");
+                    }
                 }
-
-
-                uint8_t     activeKeyBlock = 0;
-                uint8_t     newKeyBlock = TARGET_BLOCK_MIFARE_1K;
-                uint16_t    position = 0;
-
-                block   	= TARGET_BLOCK_MIFARE_1K;
-
-                //check how many bytes we need
-                if (m_NfcTag.Information.Entry.MetaData.TargetLength == 0)
-                {
-                    ESP_LOGE(TAG, "String length of ZERO given!");
-                    goto FinishReadInformation;
-                }
-                else if (m_NfcTag.Information.Entry.MetaData.TargetLength < 16) 
-                {
-                    sizeInformation = m_NfcTag.Information.Entry.MetaData.TargetLength;
-                } 
                 else
                 {
-                    sizeInformation = 16;
-                } 
-
-                while (position < m_NfcTag.Information.Entry.MetaData.TargetLength)
-                {
-                    newKeyBlock = (block / 4) * 4 + 3;
-
-                    //authentificate the block
-                    if (newKeyBlock != activeKeyBlock) 
-                    {
-                        ESP_LOGV(TAG, "Authenticating using key A...");
-                        status = m_pRfReader->PCD_Authenticate(MFRC522::PICC_CMD_MF_AUTH_KEY_A, newKeyBlock, &m_MFRC522Key, &(m_pRfReader->uid));
-                        if (status != MFRC522::STATUS_OK) {
-                            ESP_LOGW(TAG, "PCD_Authenticate() failed: %s", m_pRfReader->GetStatusCodeName(status));
-                            goto FinishReadInformation;
-                        }
-
-                        activeKeyBlock = newKeyBlock;
-                    }
-
-                    // read block
-                    status = m_pRfReader->MIFARE_Read(block, buffer, &sizeBuffer);
-                    if (status != MFRC522::STATUS_OK) 
-                    {
-                        ESP_LOGW(TAG, "MIFARE_Read() failed: %s", m_pRfReader->GetStatusCodeName(status));
-                        goto FinishReadInformation;
-                    }
-
-                    //reading was successfull, we could copy the data into our own structure
-                    memcpy((m_NfcTag.pTarget + position), buffer, sizeInformation);
-
-                    //remember the number of byte read
-                    position += sizeInformation;
-
-                    block++;
-
-                    // make sure the next block is not a key block
-                    if ((block > 2) && (((block - 3) % 4) == 0 ))
-                    {
-                        block++;
-                    }
-                } // read out loop
-                
-                ESP_LOGD(TAG, "Read target String: \"%s\"", m_NfcTag.pTarget);
-
-                m_NfcTag.TagValid = true;
+                    ESP_LOGW(TAG, "No Player Queue");
+                }                                
+            } else {
+                ESP_LOGW(TAG, "Unknown command reveived!");
             }
-            else 
-            {
-                ESP_LOGW(TAG, "Unknown Information Version");
-                goto FinishReadInformation;
-            }
-            result = true;
         }
-    } 
-    else if (piccType == MFRC522::PICC_TYPE_MIFARE_UL )
-    {
-    
-    }
-    else 
-    {
-        ESP_LOGW(TAG, "unsupported card type");
-    }
 
-FinishReadInformation:
-    if ((m_NfcTag.pTarget != NULL)&&(m_NfcTag.TagValid == false))
-    {
-        free(m_NfcTag.pTarget);
-        m_NfcTag.pTarget = NULL;
+        delay(5);        
     }
-
-    return result;
 }
 
-
-bool UserInterface::WriteInformationToTag() {
-    bool                    result = false;
-    MFRC522::StatusCode     status;
-    MFRC522::PICC_Type      piccType;
-
-    //prepare the default key
-    for (byte i = 0; i < 6; i++)
-    {
-        m_MFRC522Key.keyByte[i] = 0xFF;
-    }
-
-    // Show some details of the PICC (that is: the tag/card)
-    DumpByteArray("Card UID:", m_pRfReader->uid.uidByte, m_pRfReader->uid.size);
-
-    //check the type
-    piccType = m_pRfReader->PICC_GetType(m_pRfReader->uid.sak);
-    ESP_LOGD(TAG, "PICC type: %s", m_pRfReader->PICC_GetTypeName(piccType));
-
-    if ((piccType == MFRC522::PICC_TYPE_MIFARE_MINI ) ||
-        (piccType == MFRC522::PICC_TYPE_MIFARE_1K ) ||
-        (piccType == MFRC522::PICC_TYPE_MIFARE_4K ) )
-    {
-        uint8_t     block = INFORMATION_BLOCK_MIFARE_1K;
-        uint8_t     sizeInformation = sizeof(m_NfcTag.Information.Raw16);
-
-        // Authenticate using key A
-        ESP_LOGV(TAG, "Authenticating using key A...");
-        status = m_pRfReader->PCD_Authenticate(MFRC522::PICC_CMD_MF_AUTH_KEY_A, block, &m_MFRC522Key, &(m_pRfReader->uid));
-        if (status != MFRC522::STATUS_OK) {
-            ESP_LOGW(TAG, "PCD_Authenticate() failed: %s", m_pRfReader->GetStatusCodeName(status));
-            goto FinishWriteInformation;
-        }
-
-        //check if the union has the correct size
-        if ((sizeof(m_NfcTag.Information.Entry) != sizeInformation) || (sizeInformation > 16))
-        {
-            ESP_LOGE(TAG, "Information structure size is not equal to the readout array! (%u instead of %u)", sizeof(m_NfcTag.Information.Entry), sizeInformation);
-            goto FinishWriteInformation;
-        }
-
-        ESP_LOGD(TAG, "writing information to block %u", block);
-        status = m_pRfReader->MIFARE_Write(block, m_NfcTag.Information.Raw16, sizeInformation);
-        if (status != MFRC522::STATUS_OK) 
-        {
-            ESP_LOGW(TAG, "MIFARE_Write(%u) failed: %s", block, m_pRfReader->GetStatusCodeName(status));
-            goto FinishWriteInformation;
-        }
-        ESP_LOGD(TAG, "writing information ok");
-
-        //write the file name 
-        if(m_NfcTag.Information.Entry.MetaData.TargetLength <= 16) 
-        {
-            block = TARGET_BLOCK_MIFARE_1K;
-
-            ESP_LOGV(TAG, "Authenticating using key A...");
-            status = m_pRfReader->PCD_Authenticate(MFRC522::PICC_CMD_MF_AUTH_KEY_A, block, &m_MFRC522Key, &(m_pRfReader->uid));
-            if (status != MFRC522::STATUS_OK) {
-                ESP_LOGW(TAG, "PCD_Authenticate() failed: %s", m_pRfReader->GetStatusCodeName(status));
-                goto FinishWriteInformation;
-            }
-
-            byte buffer[18];
-
-            memset(buffer, 0, 18);
-            memcpy(buffer, m_NfcTag.pTarget, m_NfcTag.Information.Entry.MetaData.TargetLength);
-
-            ESP_LOGD(TAG, "writing information to block %u", block);
-            status = m_pRfReader->MIFARE_Write(block, buffer, 16);
-            if (status != MFRC522::STATUS_OK) 
-            {
-                ESP_LOGW(TAG, "MIFARE_Write(%u) failed: %s", block, m_pRfReader->GetStatusCodeName(status));
-                goto FinishWriteInformation;
-            }
-            ESP_LOGD(TAG, "writing information ok");
-        }
-    }
-
-FinishWriteInformation:
-    return result;
-}
-
-void UserInterface::DumpByteArray(const char *header, byte *buffer, byte bufferSize) 
-{
-    char        data[(bufferSize*3)+2];
-    char        part[3];
-
-    memset(data, 0, sizeof(data));
-
-    for (byte i = 0; i < bufferSize; i++) 
-    {
-        memset(part, 0, 3);
-        sprintf(part, "%02x", buffer[i]);
-
-        strncat(data, part, 3);
-
-        if(i < (bufferSize-1)) 
-        {
-            strncat(data, " ", 2);
-        }
-    }
-
-    ESP_LOGD(TAG, "%s: %s", header, data);
-}
-
-
-
-void UserInterface::CleanUp( void )
+void UserInterface::cleanUp( void )
 {
 
+}     
+
+
+uint32_t UserInterface::TimeElapsed(uint32_t TimeStamp)
+{
+    uint32_t result;
+    uint32_t actualTimeStamp = millis();
+
+	if (TimeStamp > actualTimeStamp) {
+		result = 0xFFFFFFFF - TimeStamp + actualTimeStamp;
+	} else {
+		result = actualTimeStamp - TimeStamp;
+	}
+
+	return result;
 }
-
-
-                
-                // } else if (piccType == MFRC522::PICC_TYPE_MIFARE_UL ) 
-                // {
-                //     byte PSWBuff[] = {0xFF, 0xFF, 0xFF, 0xFF}; //32 bit PassWord default FFFFFFFF
-                //     byte pACK[] = {0, 0}; //16 bit PassWord ACK returned by the NFCtag
-
-                //     block = 26;
-                //     // Authenticate using key A
-                //     Serial.println(F("Authenticating using key A..."));
-                //     status = m_pRfReader->PCD_NTAG216_AUTH(&PSWBuff[0], pACK);
-                //     if (status != MFRC522::STATUS_OK) {
-                //         Serial.print(F("PCD_Authenticate() failed: "));
-                //         Serial.println(m_pRfReader->GetStatusCodeName(status));
-                //         //return;
-                //     }
-
-                //     Serial.print(F("Reading data from block ")); Serial.print(block);
-                //     Serial.println(F(" ..."));
-                //     status = m_pRfReader->MIFARE_Read(block, buffer, &size);
-                //     if (status != MFRC522::STATUS_OK) {
-                //         Serial.print(F("MIFARE_Read() failed: "));
-                //         Serial.println(m_pRfReader->GetStatusCodeName(status));
-                //     }
-                //     Serial.print(F("Data in block ")); Serial.print(block); Serial.println(F(":"));
-                //     dump_byte_array(buffer, 16); Serial.println();
-                //     Serial.println();
-
-                //     byte WBuff[] = {0x01, 0x02, 0x03, 0x04};
-                //     status = m_pRfReader->MIFARE_Ultralight_Write(block, WBuff, 4);  //How to write to a page
-
-                //     if (status != MFRC522::STATUS_OK) {
-                //         Serial.print(F("MIFARE_Ultralight_Write() failed: "));
-                //         Serial.println(m_pRfReader->GetStatusCodeName(status));
-                //     }
-
-                //     Serial.print(F("Reading data from block ")); Serial.print(block);
-                //     Serial.println(F(" ..."));
-                //     status = m_pRfReader->MIFARE_Read(block, buffer, &size);
-                //     if (status != MFRC522::STATUS_OK) {
-                //         Serial.print(F("MIFARE_Read() failed: "));
-                //         Serial.println(m_pRfReader->GetStatusCodeName(status));
-                //     }
-                //     Serial.print(F("Data in block ")); Serial.print(block); Serial.println(F(":"));
-                //     dump_byte_array(buffer, 16); Serial.println();
-                //     Serial.println();
-
-
-                // }
