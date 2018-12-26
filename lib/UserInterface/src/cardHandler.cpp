@@ -123,12 +123,6 @@ bool CardHandler::IsCardPresent( CardSerialNumber *pActualCardSerial )
         } // "magic loop"
     }
 
-    //some simple debug test data    
-    else 
-    {
-        result = true;
-    }
-
     return result;    
 }
 
@@ -153,18 +147,18 @@ bool CardHandler::GetCardSerial(CardSerialNumber *pActualCardSerial)
     }
 
     //some simple debug test data
-    else 
-    {        
-        memset(pActualCardSerial->SerialNumber, 0, sizeof(pActualCardSerial->SerialNumber));
+    // else 
+    // {        
+    //     memset(pActualCardSerial->SerialNumber, 0, sizeof(pActualCardSerial->SerialNumber));
 
-        pActualCardSerial->SerialNumberLength = 4;
-        pActualCardSerial->SerialNumber[0] = 15;
-        pActualCardSerial->SerialNumber[1] = 16;
-        pActualCardSerial->SerialNumber[2] = 17;
-        pActualCardSerial->SerialNumber[3] = 18;
+    //     pActualCardSerial->SerialNumberLength = 4;
+    //     pActualCardSerial->SerialNumber[0] = 15;
+    //     pActualCardSerial->SerialNumber[1] = 16;
+    //     pActualCardSerial->SerialNumber[2] = 17;
+    //     pActualCardSerial->SerialNumber[3] = 18;
 
-        result = true;
-    }
+    //     result = true;
+    // }
 
     return result;
 }
@@ -311,13 +305,14 @@ bool CardHandler::ReadCardInformation(CardData *pTarget)
             //get the file string
             //reserve some memory for the string and fill it with '0'
             pFileName = (char *) malloc((cardDataBlock.Entry.MetaData.FileNameLength + 1) * sizeof(char));
-            memset(pFileName, 0 , (cardDataBlock.Entry.MetaData.FileNameLength + 1) * sizeof(char));
 
             if (pFileName == NULL)
             {
                 ESP_LOGE(TAG, "Could not allocate memory for file-name.");
                 goto FinishReadInformation;
             }
+
+            memset(pFileName, 0, (cardDataBlock.Entry.MetaData.FileNameLength + 1) * sizeof(char));
 
             if ((piccType == MFRC522::PICC_TYPE_MIFARE_MINI ) ||
                 (piccType == MFRC522::PICC_TYPE_MIFARE_1K ) ||
@@ -365,6 +360,8 @@ bool CardHandler::ReadCardInformation(CardData *pTarget)
                     }
                 }
 
+                memset(buffer, 0, sizeof(buffer));
+
                 // read block
                 status = m_pRfReader->MIFARE_Read(startBlockNumber, buffer, &bufferSize);
                 if (status != MFRC522::STATUS_OK) 
@@ -373,8 +370,11 @@ bool CardHandler::ReadCardInformation(CardData *pTarget)
                     goto FinishReadInformation;
                 }
 
+                buffer[16] = 0;
+                ESP_LOGV(TAG, "Read block %u content \"%s\"", startBlockNumber, buffer);
+
                 //reading was successfull, we could copy the data into our own structure
-                memcpy((pFileName + position), buffer, cardBlockSize);
+                strncat(pFileName, (const char*)buffer, cardBlockSize);
 
                 //remember the number of byte read
                 position += cardBlockSize;
@@ -422,17 +422,17 @@ bool CardHandler::ReadCardInformation(CardData *pTarget)
     }
 
     //create some dummy data for testing purpose
-    else
-    {
-        pTarget->m_fileName = "/00.mp3";
+    // else
+    // {
+    //     pTarget->m_fileName = "/00.mp3";
 
-        result = true;
-    }
+    //     result = true;
+    // }
 
     return result;
 }
 
-bool CardHandler::WriteCardInformation(CardData *pSource) 
+bool CardHandler::WriteCardInformation(CardData *pSource, CardSerialNumber *pActualCardSerial) 
 {
     bool result = false;
 
@@ -443,9 +443,18 @@ bool CardHandler::WriteCardInformation(CardData *pSource)
         MFRC522::StatusCode     status;
         MFRC522::PICC_Type      piccType;
 
-        uint8_t                 startBlockNumber;
-        uint32_t                cardBlockSize;          //the number of bytes we could read from every block
+        uint32_t                actualAuthentificatedBlock;
+        uint32_t                newAuthentificatedBlock;
 
+        uint8_t                 startSector;
+        uint32_t                sectorSize;          //the number of bytes we could read from every sector
+
+        uint32_t                pagesNeeded;
+        uint8_t                 *pDataSource;
+        uint8_t                 *pBuffer;
+
+        uint8_t                 buffer[18];
+        uint32_t                useableBufferSize = 16;
 
         //check if the union has the correct size (compare uint8_t array and structure)
         if (sizeof(cardDataBlock.Entry) != sizeof(cardDataBlock.Raw))
@@ -467,6 +476,12 @@ bool CardHandler::WriteCardInformation(CardData *pSource)
             m_MFRC522Key.keyByte[counter] = 0xFF;
         }
 
+        //check if the "known" card is still there (this will also wake up the card)
+        if (!IsCardPresent(pActualCardSerial)) 
+        {
+            goto FinishWriteInformation;
+        }
+
         //prepare the internal strucure
         cardDataBlock.Entry.Header.Cookie               = INFORMATION_BLOCK__MAGIC_KEY;
         cardDataBlock.Entry.Header.Version              = 1;
@@ -477,11 +492,14 @@ bool CardHandler::WriteCardInformation(CardData *pSource)
         cardDataBlock.Entry.MetaData.FileNameLength     = pSource->m_fileName.length();
 
         //limit file name length to 255 characters
-        if (cardDataBlock.Entry.MetaData.FileNameLength > 255)
+        if (cardDataBlock.Entry.MetaData.FileNameLength > 40)
         {
-            ESP_LOGE(TAG, "Maximum supported File Name legth is 255 (%u)", cardDataBlock.Entry.MetaData.FileNameLength);
+            ESP_LOGE(TAG, "Maximum supported File Name legth is 40 (%u)", cardDataBlock.Entry.MetaData.FileNameLength);
             goto FinishWriteInformation;
         }
+
+        //clear the data buffer
+        memset(buffer, 0, sizeof(buffer));
 
         //get the type for the card
         piccType = m_pRfReader->PICC_GetType(m_pRfReader->uid.sak);
@@ -489,86 +507,172 @@ bool CardHandler::WriteCardInformation(CardData *pSource)
 
         if ((piccType != MFRC522::PICC_TYPE_MIFARE_MINI ) &&
             (piccType != MFRC522::PICC_TYPE_MIFARE_1K ) &&
-            (piccType != MFRC522::PICC_TYPE_MIFARE_4K ) /*&&
-            (piccType != MFRC522::PICC_TYPE_MIFARE_UL )*/ )
+            (piccType != MFRC522::PICC_TYPE_MIFARE_4K ) &&
+            (piccType != MFRC522::PICC_TYPE_MIFARE_UL ) )
         {
             ESP_LOGW(TAG, "Unsupported card type deteced");
             goto FinishWriteInformation;
         }
 
-        //authentificate with the card
+        //authentificate with the card and set card specific parameters
         if ((piccType == MFRC522::PICC_TYPE_MIFARE_MINI ) ||
             (piccType == MFRC522::PICC_TYPE_MIFARE_1K ) ||
             (piccType == MFRC522::PICC_TYPE_MIFARE_4K ) )
         {
             //initiate the variables for this card type
-            startBlockNumber = INFORMATION_BLOCK_MIFARE_1K;
+            startSector = INFORMATION_BLOCK_MIFARE_1K;
 
-            cardBlockSize   = 16;
+            sectorSize   = 16;
+
+            pBuffer = &(buffer[0]);
 
             // Authenticate using key A
             ESP_LOGV(TAG, "Authenticating MIFARE Mini/1k/4k using key A...");
-            status = m_pRfReader->PCD_Authenticate(MFRC522::PICC_CMD_MF_AUTH_KEY_A, startBlockNumber, &m_MFRC522Key, &(m_pRfReader->uid));
+            status = m_pRfReader->PCD_Authenticate(MFRC522::PICC_CMD_MF_AUTH_KEY_A, startSector, &m_MFRC522Key, &(m_pRfReader->uid));
         } 
-        // else if (piccType == MFRC522::PICC_TYPE_MIFARE_UL ) 
-        // {
-        //     byte pACK[] = {0, 0}; //16 bit PassWord ACK returned by the NFCtag
-
-        //     startBlockNumber = INFORMATION_BLOCK_MIFARE_ULTRA;
-            
-        //     cardBlockSize     = 4; 
-
-        //     // Authenticate using key A
-        //     ESP_LOGV(TAG, "Authenticating MIFARE UL using key A...");
-        //     status = m_pRfReader->PCD_NTAG216_AUTH(m_MFRC522Key.keyByte, pACK);
-        // }
-
-        ESP_LOGV(TAG, "Writing information to block %u", startBlockNumber);
-        status = m_pRfReader->MIFARE_Write(startBlockNumber, cardDataBlock.Raw, cardBlockSize);
-
-
-        if (status != MFRC522::STATUS_OK)
+        else if (piccType == MFRC522::PICC_TYPE_MIFARE_UL ) 
         {
-            ESP_LOGW(TAG, "MIFARE_Write(%u) failed: %s", startBlockNumber, m_pRfReader->GetStatusCodeName(status));
+            byte pACK[] = {0, 0}; //16 bit PassWord ACK returned by the NFCtag
+
+            startSector = INFORMATION_BLOCK_MIFARE_ULTRA;
+            
+            sectorSize     = 4; 
+
+            pBuffer = &(buffer[0]);
+
+            // Authenticate using key A
+            ESP_LOGV(TAG, "Authenticating MIFARE UL using key A...");
+            status = m_pRfReader->PCD_NTAG216_AUTH(m_MFRC522Key.keyByte, pACK);
+        }
+
+        if (status != MFRC522::STATUS_OK) 
+        {
+            ESP_LOGW(TAG, "Authenticating failed: %s", m_pRfReader->GetStatusCodeName(status));
             goto FinishWriteInformation;
         }
 
-        ESP_LOGD(TAG, "Wrote information block to card");
+        
+        pagesNeeded  = INFORMATION_BLOCK_SIZE / sectorSize;
+        pDataSource  = &(cardDataBlock.Raw[0]);
 
-        //write the file name 
-        if(cardDataBlock.Entry.MetaData.FileNameLength <= 16) 
+        ESP_LOGV(TAG, "Writing information to %u blocks starting at block %u", pagesNeeded, startSector);
+
+        for (uint32_t block = startSector; block < (startSector + pagesNeeded); block++ )
         {
-            startBlockNumber = TARGET_BLOCK_MIFARE_1K;
+            //copy the next data portion into the output buffer
+            memcpy(pBuffer, pDataSource, sectorSize);
 
-            ESP_LOGV(TAG, "Authenticating using key A...");
-            status = m_pRfReader->PCD_Authenticate(MFRC522::PICC_CMD_MF_AUTH_KEY_A, startBlockNumber, &m_MFRC522Key, &(m_pRfReader->uid));
-            if (status != MFRC522::STATUS_OK) {
-                ESP_LOGW(TAG, "PCD_Authenticate() failed: %s", m_pRfReader->GetStatusCodeName(status));
-                goto FinishWriteInformation;
-            }
-
-            byte buffer[18];
-
-            memset(buffer, 0, 18);
-            memcpy(buffer, pSource->m_fileName.c_str(), cardDataBlock.Entry.MetaData.FileNameLength);
-
-            ESP_LOGD(TAG, "writing information to block %u", startBlockNumber);
-
-            status = m_pRfReader->MIFARE_Write(startBlockNumber, buffer, 16);
+            status = m_pRfReader->MIFARE_Write(block, buffer, useableBufferSize);
             if (status != MFRC522::STATUS_OK) 
             {
-                ESP_LOGW(TAG, "MIFARE_Write(%u) failed: %s", startBlockNumber, m_pRfReader->GetStatusCodeName(status));
+                ESP_LOGW(TAG, "MIFARE_Write() failed: %s", m_pRfReader->GetStatusCodeName(status));
                 goto FinishWriteInformation;
             }
 
-            ESP_LOGI(TAG, "writing information ok");
-
-            result = true;
+            //writing was successfull, advance the source pointer
+            pDataSource += sectorSize;
         }
+        
+        ESP_LOGD(TAG, "Wrote information block to card");
+
+
+        //write the file name
+        //----------------------------------------------------
+        if ((piccType == MFRC522::PICC_TYPE_MIFARE_MINI ) ||
+            (piccType == MFRC522::PICC_TYPE_MIFARE_1K ) ||
+            (piccType == MFRC522::PICC_TYPE_MIFARE_4K ) )
+        {
+            //initiate the variables for this card type
+            startSector = TARGET_BLOCK_MIFARE_1K;
+
+            sectorSize   = 16;
+
+            pBuffer = &(buffer[0]);
+
+            actualAuthentificatedBlock  = 0;
+
+        } 
+        else if (piccType == MFRC522::PICC_TYPE_MIFARE_UL ) 
+        {
+            startSector = TARGET_BLOCK_MIFARE_ULTRA;
+            
+            sectorSize     = 4; 
+
+            actualAuthentificatedBlock  = 0;
+
+            pBuffer = &(buffer[0]);
+        }
+
+
+        pagesNeeded  = (pSource->m_fileName.length()+1) / sectorSize;
+
+        if ((pSource->m_fileName.length()+1) % sectorSize)
+        {
+            pagesNeeded++;
+        }
+
+        ESP_LOGV(TAG, "Writing information to %u blocks(s) starting at block %u", pagesNeeded, startSector);
+
+        for (uint32_t block = startSector; block < (startSector + pagesNeeded); block++ )
+        {
+            if ((piccType == MFRC522::PICC_TYPE_MIFARE_MINI ) ||
+                (piccType == MFRC522::PICC_TYPE_MIFARE_1K ) ||
+                (piccType == MFRC522::PICC_TYPE_MIFARE_4K ) )
+            {
+
+                newAuthentificatedBlock     = (block / 4) ;
+
+                //authentificate the block
+                if (newAuthentificatedBlock != actualAuthentificatedBlock) 
+                {
+                    ESP_LOGV(TAG, "Authenticating sector %u using key A...", newAuthentificatedBlock);
+                    status = m_pRfReader->PCD_Authenticate(MFRC522::PICC_CMD_MF_AUTH_KEY_A, (newAuthentificatedBlock * 4 + 3), &m_MFRC522Key, &(m_pRfReader->uid));
+                    if (status != MFRC522::STATUS_OK) {
+                        ESP_LOGW(TAG, "Authentication failed for sector %u: %s", newAuthentificatedBlock, m_pRfReader->GetStatusCodeName(status));
+                        goto FinishWriteInformation;
+                    }
+
+                    actualAuthentificatedBlock = newAuthentificatedBlock;
+                }
+            }
+
+            memset(buffer, 0, sizeof(buffer));
+
+            // get always one byte more since the result is '\0' terminated
+            pSource->m_fileName.getBytes(pBuffer, (sectorSize + 1), (block - startSector) * sectorSize);
+
+            ESP_LOGV(TAG, "writing information to block %u -> \"%s\"", block, pBuffer);
+
+            status = m_pRfReader->MIFARE_Write(block, buffer, useableBufferSize);
+            if (status != MFRC522::STATUS_OK) 
+            {
+                ESP_LOGW(TAG, "MIFARE_Write(%u) failed: %s", block, m_pRfReader->GetStatusCodeName(status));
+                goto FinishWriteInformation;
+            }
+
+            // // skip any key blocks
+            // if ((piccType == MFRC522::PICC_TYPE_MIFARE_MINI ) ||
+            //     (piccType == MFRC522::PICC_TYPE_MIFARE_1K ) ||
+            //     (piccType == MFRC522::PICC_TYPE_MIFARE_4K ) )
+            // {
+            //     // make sure the next block is not a key block
+            //     if ((block > 2) && (((block - 3) % 4) == 0 ))
+            //     {
+            //         block++;
+            //     }
+            // }
+        }
+
+        ESP_LOGI(TAG, "writing information ok");
+
+        result = true;
+        
     }
 
     FinishWriteInformation:
     
+    StopCommunication();
+
     return result;
  }
 

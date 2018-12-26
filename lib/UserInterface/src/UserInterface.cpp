@@ -137,6 +137,11 @@ void UserInterface::run( void )
 
                         m_CardStatus = RfidCardStatus::NoCard;
 
+                    } 
+                    else 
+                    {
+                        //end communication with the card
+                        m_CardHandler.StopCommunication();
                     }
                 }
 
@@ -210,11 +215,11 @@ void UserInterface::run( void )
                                 ESP_LOGI(TAG, "No valid tag found / could no read information");
                                 m_CardStatus = RfidCardStatus::UnknownCard;
                             }
+                        } // serial read
 
+                        // end communication with the card
+                        m_CardHandler.StopCommunication();
 
-                            //end communication with the card
-                            m_CardHandler.StopCommunication();
-                        }
                     } // new card found
                 } // time elapsed
 
@@ -289,7 +294,14 @@ void UserInterface::run( void )
 
                     ESP_LOGD(TAG, "Writing Card for %s", pNewCard->m_fileName.c_str());
 
-                    m_CardHandler.WriteCardInformation(pNewCard);
+                    if (m_CardHandler.WriteCardInformation(pNewCard, &m_CardSerialNumber)) 
+                    {
+                        ESP_LOGI(TAG, "Wrote card successfully");
+                    } 
+                    else
+                    {
+                        ESP_LOGW(TAG, "Wrote card FAILED");
+                    }
 
                     delete (CardData *) InterfaceCommandMessage.pData;
                 }
