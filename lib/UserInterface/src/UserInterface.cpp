@@ -80,9 +80,6 @@ void UserInterface::run( void )
 
     while (true)
     {
-        //set/clear LEDs
-
-
         //check buttons
 
 
