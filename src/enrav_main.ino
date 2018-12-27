@@ -4,6 +4,7 @@
 #include "vs1053_ext.h"
 #include "mp3player.h"
 #include "UserInterface.h"
+#include "LedHandler.h"
 
 #include "pinout.h"
 
@@ -25,22 +26,28 @@ using namespace simplecli;
     String password = "xxxxxxxxxxxxxxxx";
 #endif
 
+
 UserInterface   myInterface;
 Mp3player       MyPlayer(VS1053_CS, VS1053_DCS, VS1053_DREQ);
 
-QueueHandle_t     PlayerCommandQueue;
-QueueHandle_t   *pCommandInterfaceQueue;
+QueueHandle_t       PlayerCommandQueue;
+QueueHandle_t       *pCommandInterfaceQueue;
+EventGroupHandle_t  SystemFlagGroup;
+
+LedHandler          MyLedHandler;
 
 //
-SimpleCLI       *pCli;          // pointer to command line handler
-String          NewCommand;     // string to collect characters from the input
+SimpleCLI           *pCli;          // pointer to command line handler
+String              NewCommand;     // string to collect characters from the input
 
-String Version = "EnRav 0.13.1";
+String Version = "EnRav 0.14.0";
 
 //The setup function is called once at startup of the sketch
 void setup() {
 
+    //prepare the internal inter task communication channels
     PlayerCommandQueue = xQueueCreate( 5, sizeof( Mp3player::PlayerControlMessage_s ) );
+    SystemFlagGroup    = xEventGroupCreate();
 
     Serial.begin(115200);
 
@@ -55,6 +62,9 @@ void setup() {
 
     MyPlayer.begin(&PlayerCommandQueue);
 
+    MyLedHandler.SetEventGroup(&SystemFlagGroup);
+    MyLedHandler.begin();
+    
     // WiFi.disconnect();
     // WiFi.mode(WIFI_STA);
     // WiFi.begin(ssid.c_str(), password.c_str());
