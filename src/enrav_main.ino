@@ -35,7 +35,7 @@ QueueHandle_t   *pCommandInterfaceQueue;
 SimpleCLI       *pCli;          // pointer to command line handler
 String          NewCommand;     // string to collect characters from the input
 
-String Version = "EnRav 0.13.0";
+String Version = "EnRav 0.13.1";
 
 //The setup function is called once at startup of the sketch
 void setup() {
