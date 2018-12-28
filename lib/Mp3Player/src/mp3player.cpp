@@ -4,6 +4,8 @@
 Mp3player::Mp3player(uint8_t _cs_pin = 25, uint8_t _dcs_pin = 26, uint8_t _dreq_pin = 32)
 {
     m_pPlayer = new VS1053(_cs_pin, _dcs_pin, _dreq_pin);
+
+    m_SystemFlagGroup = NULL;
 }
 
 Mp3player::~Mp3player()
@@ -16,6 +18,11 @@ void Mp3player::begin( QueueHandle_t *pCommandQueue )
 {
     m_pPlayerQueue = pCommandQueue;
 
+    if(m_SystemFlagGroup)
+    {
+        m_pPlayer->setSystemFlagGroup(m_SystemFlagGroup);
+    }
+
     //create the task that will handle the playback
     xTaskCreate(
                     TaskFunctionAdapter,        /* Task function. */
@@ -24,6 +31,11 @@ void Mp3player::begin( QueueHandle_t *pCommandQueue )
                     this,                       /* Parameter passed as input of the task */
                     1,                          /* Priority of the task. */
                     &m_handle);                 /* Task handle. */
+}
+
+void Mp3player::SetSystemFlagGroup(EventGroupHandle_t eventGroup)
+{
+    m_SystemFlagGroup = eventGroup;
 }
 
 
@@ -45,6 +57,8 @@ void Mp3player::Run( void ) {
 
     m_pPlayer->begin();
     m_pPlayer->setVolume(15);
+
+    m_pPlayer->printVersion();
     //m_pPlayer->connecttoSD("/01.mp3"); // SD card
 
     //mp3.begin();
@@ -64,14 +78,16 @@ void Mp3player::Run( void ) {
         {
             ESP_LOGV(TAG, "Received Command %u", PlayerControlMessage.Command);
 
-            if (PlayerControlMessage.Command == CMD_PLAY_FILE) 
+            if ((PlayerControlMessage.Command == CMD_PLAY_FILE) || 
+                (PlayerControlMessage.Command == CMD_RESUME_FILE))
             {
                 //make sure the file exists
                 if (PlayerControlMessage.pFileToPlay != NULL)
                 {
-                    ESP_LOGD(TAG, "Received Path %s", PlayerControlMessage.pFileToPlay);
+                    ESP_LOGD(TAG, "Received Path %s", PlayerControlMessage.pFileToPlay->c_str());
 
-                    m_pPlayer->connecttoSD(PlayerControlMessage.pFileToPlay->c_str()); 
+                    m_pPlayer->connecttoSD(*(PlayerControlMessage.pFileToPlay), true); 
+                    // m_pPlayer->connecttoSD(*(PlayerControlMessage.pFileToPlay), (PlayerControlMessage.Command == CMD_RESUME_FILE)?true:false); 
 
                     delete(PlayerControlMessage.pFileToPlay);
 

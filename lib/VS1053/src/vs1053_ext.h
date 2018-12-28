@@ -77,6 +77,8 @@ class VS1053
     uint16_t m_ringspace=0;                         // Ringbuffer free space
     uint16_t m_rcount=0;                            // Ringbuffer used space
 
+    EventGroupHandle_t m_SystemFlagGroup;
+    
     boolean         m_ssl=false;
     uint32_t        m_t0;                           // Keep alive, end a playlist
     uint8_t         m_endFillByte ;                 // Byte to send when stopping song
@@ -157,7 +159,9 @@ class VS1053
 
     void     begin() ;                                  // Begin operation.  Sets pins correctly,
                                                         // and prepares SPI bus.
-    void     stop_mp3client();
+
+    void     setSystemFlagGroup(EventGroupHandle_t eventGroup);
+    void     stop_mp3client(bool resetPosition = false);
     void     setVolume(uint8_t vol);                    // Set the player volume.Level from 0-21, higher is louder.
     void     setTone(uint8_t* rtone);                   // Set the player baas/treble, 4 nibbles for treble gain/freq and bass gain/freq
     uint8_t  getVolume();                               // Get the current volume setting, higher is louder.
@@ -167,7 +171,7 @@ class VS1053
     void 	 loop();
     uint16_t ringused();
     bool     connecttohost(String host);
-    bool	 connecttoSD(String sdfile);
+    bool	 connecttoSD(String sdfile, bool resume = false);
     bool     connecttospeech(String speech, String lang);
     inline uint8_t getDatamode(){
        	return m_datamode;

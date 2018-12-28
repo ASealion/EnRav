@@ -13,11 +13,11 @@
             ~LedHandler();
 
             bool begin( void );
-            bool SetEventGroup (EventGroupHandle_t  *pEventGroup);
+            bool SetEventGroup (EventGroupHandle_t eventGroup);
 
         private:
             TaskHandle_t         m_handle;
-            EventGroupHandle_t  *m_pEventGroup;
+            EventGroupHandle_t   m_EventGroup;
 
             const double         m_frequency = 5000;
             const uint8_t        m_resolution = 8;

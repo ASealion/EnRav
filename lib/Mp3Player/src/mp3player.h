@@ -15,7 +15,8 @@
             typedef enum {
                 CMD_UNKNOWN,
                 CMD_PLAY_FILE,
-                CMD_STOP, 
+                CMD_RESUME_FILE,
+                CMD_STOP,
                 CMD_VOL_UP,
                 CMD_VOL_DOWN,
             } PlayerCommand_e;
@@ -31,12 +32,14 @@
 
             void            begin( QueueHandle_t *commandQueue );
 
+            void            SetSystemFlagGroup(EventGroupHandle_t eventGroup);
             QueueHandle_t   *getQueue( void );
 
         private:
-            TaskHandle_t    m_handle;
-            QueueHandle_t   *m_pPlayerQueue;
-            VS1053          *m_pPlayer;
+            TaskHandle_t        m_handle;
+            QueueHandle_t       *m_pPlayerQueue;
+            EventGroupHandle_t  m_SystemFlagGroup;
+            VS1053              *m_pPlayer;
 
 
             //
