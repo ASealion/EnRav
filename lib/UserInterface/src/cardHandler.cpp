@@ -296,11 +296,8 @@ bool CardHandler::ReadCardInformation(CardData *pTarget)
 
 
             // handle configuration
-
-
-            // handle last positions
-            pTarget->m_PlaylistPosition = cardDataBlock.Entry.MetaData.LastListPostion;
-            pTarget->m_TrackPosition    = cardDataBlock.Entry.MetaData.LastFilePosition;
+            pTarget->m_Resumeable           = cardDataBlock.Entry.MetaData.Configuration.Resumeable?true:false;
+            pTarget->m_Volume               = cardDataBlock.Entry.MetaData.Volume;
 
             //get the file string
             //reserve some memory for the string and fill it with '0'
@@ -483,13 +480,14 @@ bool CardHandler::WriteCardInformation(CardData *pSource, CardSerialNumber *pAct
         }
 
         //prepare the internal strucure
-        cardDataBlock.Entry.Header.Cookie               = INFORMATION_BLOCK__MAGIC_KEY;
-        cardDataBlock.Entry.Header.Version              = 1;
+        cardDataBlock.Entry.Header.Cookie                       = INFORMATION_BLOCK__MAGIC_KEY;
+        cardDataBlock.Entry.Header.Version                      = 1;
 
-        cardDataBlock.Entry.MetaData.Configuration      = 0;        
-        cardDataBlock.Entry.MetaData.LastListPostion    = 0;
-        cardDataBlock.Entry.MetaData.LastFilePosition   = 0;
-        cardDataBlock.Entry.MetaData.FileNameLength     = pSource->m_fileName.length();
+        cardDataBlock.Entry.MetaData.Volume                     = pSource->m_Volume;
+        cardDataBlock.Entry.MetaData.Configuration.Full         = 0;
+        cardDataBlock.Entry.MetaData.Configuration.Resumeable   = pSource->m_Resumeable?1:0;        
+
+        cardDataBlock.Entry.MetaData.FileNameLength             = pSource->m_fileName.length();
 
         //limit file name length to 255 characters
         if (cardDataBlock.Entry.MetaData.FileNameLength > 40)

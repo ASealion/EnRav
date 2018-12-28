@@ -174,15 +174,39 @@ void UserInterface::run( void )
                                 ESP_LOGI(TAG, "Valid EnRav tag found");
                                 m_CardStatus = RfidCardStatus::ValidCard;
 
-                                //check options
+                                //check check for "special" volume
+                                if (m_CardData.m_Volume != 0)
+                                {
+                                    Mp3player::PlayerControlMessage_s newMessage = { .Command = Mp3player::CMD_PLAY_FILE };
 
-                                //play file (is set)
+                                    //TODO add volume
+
+                                    if (xQueueSend( *m_pPlayerQueue, &newMessage, ( TickType_t ) 0 ) )
+                                        {
+                                            ESP_LOGD(TAG, "Send \"Play File Message\" to queue");
+                                        } else {
+                                            ESP_LOGE(TAG, "Send to player queue failed");
+
+                                            // //if the send failed, we must do the job of deleting the string
+                                            delete(newMessage.pFileToPlay);
+                                        }
+                                }
+                                //play file (if set)
                                 if (m_CardData.m_fileName.length()) 
                                 {
 
                                     if (m_pPlayerQueue != NULL) 
                                     {
-                                        Mp3player::PlayerControlMessage_s newMessage = { .Command = Mp3player::CMD_PLAY_FILE };
+                                        Mp3player::PlayerControlMessage_s newMessage;
+                                        
+                                        if (m_CardData.m_Resumeable)
+                                        {
+                                            newMessage.Command = Mp3player::CMD_RESUME_FILE;
+                                        }
+                                        else
+                                        {
+                                            newMessage.Command = Mp3player::CMD_PLAY_FILE;
+                                        }
 
                                         //create a new String Object and attach the pointer to the new message
                                         newMessage.pFileToPlay = new String(m_CardData.m_fileName);
@@ -200,12 +224,6 @@ void UserInterface::run( void )
 
                                     ESP_LOGD(TAG, "Requesting file \"%s\"", m_CardData.m_fileName.c_str() );
                                 }
-
-                                //check playlist position
-
-
-                                //check file position
-
                             } 
                             else 
                             {
@@ -285,10 +303,6 @@ void UserInterface::run( void )
                 {
                     CardData *pNewCard = (CardData *) InterfaceCommandMessage.pData;
 
-                    //some parts of the structure should be zero if the card is new
-                    pNewCard->m_PlaylistPosition    = 0;
-                    pNewCard->m_TrackPosition       = 0;
-
                     ESP_LOGD(TAG, "Writing Card for %s", pNewCard->m_fileName.c_str());
 
                     if (m_CardHandler.WriteCardInformation(pNewCard, &m_CardSerialNumber)) 
@@ -336,6 +350,39 @@ void UserInterface::run( void )
                     }
                 }
             }
+            // CMD_RESUME_FILE,                
+            else if (InterfaceCommandMessage.Command == UserInterface::CMD_RESUME_FILE) 
+            {
+                //make sure the file exists
+                if (InterfaceCommandMessage.pData != NULL)
+                {
+                    String *pFileName = (String *) InterfaceCommandMessage.pData;
+
+                    if ((pFileName->length()) && (m_pPlayerQueue != NULL)) 
+                    {
+                        Mp3player::PlayerControlMessage_s newMessage = { .Command = Mp3player::CMD_RESUME_FILE };
+
+                        //attach the pointer to the next message
+                        newMessage.pFileToPlay = pFileName;
+
+                        if (xQueueSend( *m_pPlayerQueue, &newMessage, ( TickType_t ) 0 ) )
+                        {
+                            ESP_LOGD(TAG, "Send \"Resume File Message\" for \"%s\" to queue", newMessage.pFileToPlay->c_str());
+                        } 
+                        else 
+                        {
+                            ESP_LOGE(TAG, "Send to player queue failed");
+
+                            // //if the send failed, we must do the job of deleting the string
+                            delete newMessage.pFileToPlay;
+                        }
+                    }
+                    else 
+                    {
+                        delete (String*) InterfaceCommandMessage.pData;
+                    }
+                }
+            }            
             // CMD_PLAY_STOP,
             else if (InterfaceCommandMessage.Command == UserInterface::CMD_PLAY_STOP) 
             {

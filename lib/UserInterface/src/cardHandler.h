@@ -10,8 +10,8 @@
     {
         public:
             String      m_fileName;
-            uint32_t    m_PlaylistPosition;
-            uint32_t    m_TrackPosition;
+            bool        m_Resumeable;
+            uint8_t     m_Volume;
 
             bool        m_valid;
 
@@ -64,14 +64,20 @@
             {
                 struct {
                     struct {
-                        uint32_t    Cookie;             // 4 byte
-                        uint32_t    Version;            // 4 byte
+                        uint32_t        Cookie;             // 4 byte
+                        uint32_t        Version;            // 4 byte
                     } Header;
                     struct {
-                        uint16_t    FileNameLength;     // 2 byte
-                        uint8_t     Configuration;      // 1 byte
-                        uint8_t     LastListPostion;    // 1 Byte
-                        uint32_t    LastFilePosition;   // 4 byte
+                        uint16_t        FileNameLength;     // 2 byte
+                        uint8_t         Volume;             // 1 byte
+                        uint8_t         Flags;              // 1 Byte
+                        union 
+                        {   
+                            struct {
+                                uint32_t    Resumeable:1;   //
+                            };
+                            uint32_t    Full;
+                        }               Configuration;      // 4 byte
                     } MetaData;
                 }Entry;                                 // complete 16 byte
 

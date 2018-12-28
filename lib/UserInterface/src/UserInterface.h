@@ -24,6 +24,7 @@
                 CMD_CARD_WRITE,
 
                 CMD_PLAY_FILE,
+                CMD_RESUME_FILE,
                 CMD_PLAY_STOP,
             } InterfaceCommand_e;
 
