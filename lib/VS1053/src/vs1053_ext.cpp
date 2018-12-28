@@ -1,5 +1,6 @@
 #include "vs1053_ext.h"
 
+#include "SystemEventFlags.h"
 
 #ifdef ARDUINO_ARCH_ESP32
     #include "esp32-hal-log.h"
@@ -15,7 +16,8 @@ VS1053::VS1053(uint8_t _cs_pin, uint8_t _dcs_pin, uint8_t _dreq_pin) :
     m_t0=0;
     m_LFcount=0;
 }
-VS1053::~VS1053(){
+VS1053::~VS1053()
+{
     // destructor
 }
 //---------------------------------------------------------------------------------------
@@ -85,8 +87,8 @@ void VS1053::sdi_send_buffer(uint8_t* data, size_t len)
     data_mode_off();
 }
 //---------------------------------------------------------------------------------------
-void VS1053::sdi_send_fillers(size_t len){
-
+void VS1053::sdi_send_fillers(size_t len)
+{
     size_t chunk_length;                         // Length of chunk 32 byte or shorter
 
     data_mode_on();
@@ -117,8 +119,8 @@ uint16_t VS1053::wram_read(uint16_t address){
     return read_register(SCI_WRAM);              // Read back result
 }
 //---------------------------------------------------------------------------------------
-void VS1053::begin(){
-
+void VS1053::begin()
+{
     pinMode(dreq_pin, INPUT);                          // DREQ is an input
     pinMode(cs_pin, OUTPUT);                           // The SCI and SDI signals
     pinMode(dcs_pin, OUTPUT);
@@ -150,19 +152,24 @@ void VS1053::begin(){
     delay(10);
     await_data_request();
     m_endFillByte=wram_read(0x1E06) & 0xFF;
-    ESP_LOGI(TAG, "endFillByte is 0x%X", m_endFillByte);
+    ESP_LOGD(TAG, "endFillByte is 0x%X", m_endFillByte);
     delay(100);
 }
 //---------------------------------------------------------------------------------------
-void VS1053::setVolume(uint8_t vol){
+void VS1053::setVolume(uint8_t vol)
+{
     // Set volume.  Both left and right.
     // Input value is 0..21.  21 is the loudest.
     // Clicking reduced by using 0xf8 to 0x00 as limits.
     uint16_t value;                                      // Value to send to SCI_VOL
 
-    if(vol > 21) vol=21;
+    if(vol > 21)
+    {
+        vol=21;
+    }
     vol=volumetable[vol];
-    if(vol != curvol){
+    if(vol != curvol)
+    {
         curvol=vol;                                      // Save for later use
         value=map(vol, 0, 100, 0xF8, 0x00);              // 0..100% to one channel
         value=(value << 8) | value;
@@ -170,14 +177,15 @@ void VS1053::setVolume(uint8_t vol){
     }
 }
 //---------------------------------------------------------------------------------------
-void VS1053::setTone(uint8_t *rtone){                    // Set bass/treble (4 nibbles)
+void VS1053::setTone(uint8_t *rtone)
+{                    // Set bass/treble (4 nibbles)
 
     // Set tone characteristics.  See documentation for the 4 nibbles.
     uint16_t value=0;                                    // Value to send to SCI_BASS
     int i;                                               // Loop control
 
     for(i=0; i < 4; i++)
-            {
+    {
         value=(value << 4) | rtone[i];                   // Shift next nibble in
     }
     write_register(SCI_BASS, value);                     // Volume left and right
@@ -202,7 +210,7 @@ void VS1053::stopSong()
     delay(10);
     write_register(SCI_MODE, _BV (SM_SDINEW) | _BV(SM_CANCEL));
     for(i=0; i < 200; i++)
-            {
+    {
         sdi_send_fillers(32);
         modereg=read_register(SCI_MODE);  // Read status
         if((modereg & _BV(SM_CANCEL)) == 0)
@@ -224,16 +232,17 @@ void VS1053::softReset()
     await_data_request();
 }
 //---------------------------------------------------------------------------------------
-void VS1053::printDetails(){
+void VS1053::printDetails()
+{
     uint16_t regbuf[16];
     uint8_t i;
     String reg, tmp;
-//    String bit_rep[16] = {
-//        [ 0] = "0000", [ 1] = "0001", [ 2] = "0010", [ 3] = "0011",
-//        [ 4] = "0100", [ 5] = "0101", [ 6] = "0110", [ 7] = "0111",
-//        [ 8] = "1000", [ 9] = "1001", [10] = "1010", [11] = "1011",
-//        [12] = "1100", [13] = "1101", [14] = "1110", [15] = "1111",
-//    };
+    //    String bit_rep[16] = {
+    //        [ 0] = "0000", [ 1] = "0001", [ 2] = "0010", [ 3] = "0011",
+    //        [ 4] = "0100", [ 5] = "0101", [ 6] = "0110", [ 7] = "0111",
+    //        [ 8] = "1000", [ 9] = "1001", [10] = "1010", [11] = "1011",
+    //        [12] = "1100", [13] = "1101", [14] = "1110", [15] = "1111",
+    //    };
     String regName[16] = {
         [ 0] = "MODE       ", [ 1] = "STATUS     ", [ 2] = "BASS       ", [ 3] = "CLOCKF     ",
         [ 4] = "DECODE_TIME", [ 5] = "AUDATA     ", [ 6] = "WRAM       ", [ 7] = "WRAMADDR   ",
@@ -256,7 +265,8 @@ void VS1053::printDetails(){
     }
 }
 //---------------------------------------------------------------------------------------
-bool VS1053::printVersion(){
+bool VS1053::printVersion()
+{
     boolean flag=false;
     uint16_t reg1=0, reg2=0;
     reg1=wram_read(0x1E00);
@@ -271,7 +281,7 @@ bool VS1053::printVersion(){
     {
         flag=true;
     }
-    ESP_LOGD(TAG, "chipID = %d%d\n", reg1, reg2);
+    ESP_LOGD(TAG, "chipID = %d%d", reg1, reg2);
 
     reg1=wram_read(0x1E02) & 0xFF;
     if(reg1==0xFF) 
@@ -280,7 +290,7 @@ bool VS1053::printVersion(){
         flag=false;
     } // version too high
 
-    ESP_LOGD(TAG, "version = %d\n", reg1);
+    ESP_LOGD(TAG, "version = %d", reg1);
 
     return flag;
 }
@@ -305,7 +315,8 @@ bool VS1053::chkhdrline(const char* str){
     return false;                                      // End of string without colon
 }
 //---------------------------------------------------------------------------------------
-void VS1053::showstreamtitle(const char *ml, bool full){
+void VS1053::showstreamtitle(const char *ml, bool full)
+{
     // example for ml:
     // StreamTitle='Oliver Frank - Mega Hitmix';StreamUrl='www.radio-welle-woerthersee.at';
     // or adw_ad='true';durationMilliseconds='10135';adId='34254';insertionType='preroll';
@@ -317,7 +328,7 @@ void VS1053::showstreamtitle(const char *ml, bool full){
     if(pos1!=-1){                                       // StreamTitle found
         pos1=pos1+12;
         st=mline.substring(pos1);                       // remove "StreamTitle="
-//      log_i("st_orig %s", st.c_str());
+    //  log_i("st_orig %s", st.c_str());
         if(st.startsWith("'{")){
             // special codig like '{"t":"\u041f\u0438\u043a\u043d\u0438\u043a - \u0418...."m":"mdb","lAU":0,"lAuU":18}
             pos2= st.indexOf('"', 8);                   // end of '{"t":".......", seek for double quote at pos 8
@@ -410,7 +421,8 @@ void VS1053::showstreamtitle(const char *ml, bool full){
     }
 }
 //---------------------------------------------------------------------------------------
-void VS1053::handlebyte(uint8_t b){
+void VS1053::handlebyte(uint8_t b)
+{
     static uint16_t playlistcnt;                                // Counter to find right entry in playlist
     String lcml;                                                // Lower case metaline
     static String ct;                                           // Contents type
@@ -471,7 +483,7 @@ void VS1053::handlebyte(uint8_t b){
                     if(m_icyname!=""){
                         if(vs1053_showstation) vs1053_showstation(m_icyname.c_str());
                     }
-//                    for(int z=0; z<m_icyname.length();z++) log_e("%i",m_icyname[z]);
+    //   for(int z=0; z<m_icyname.length();z++) log_e("%i",m_icyname[z]);
                 }
                 else if(lcml.startsWith("transfer-encoding:")){
                     // Station provides chunked transfer
@@ -712,11 +724,13 @@ void VS1053::handlebyte(uint8_t b){
     }
 }
 //---------------------------------------------------------------------------------------
-uint16_t VS1053::ringused(){
+uint16_t VS1053::ringused()
+{
     return (m_rcount);                                      // Free space available
 }
 //---------------------------------------------------------------------------------------
-void VS1053::loop(){
+void VS1053::loop()
+{
 
     uint16_t part=0;                                        // part at the end of the ringbuffer
     uint16_t bcs=0;                                         // bytes can current send
@@ -730,7 +744,8 @@ void VS1053::loop(){
     static uint32_t i=0;                                    // Count loops if ringbuffer is empty
 
     // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    if(m_f_localfile){                                      // Playing file from SD card?
+    if(m_f_localfile)                                       // Playing file from SD card?
+    {
         av=mp3file.available();                             // Bytes left in file
         if(av < maxchunk) maxchunk=av;                      // Reduce byte count for this mp3loop()
         if(maxchunk)                                        // Anything to read?
@@ -740,8 +755,7 @@ void VS1053::loop(){
         }
         if(av == 0)
         {                                                   // No more data from SD Card
-            mp3file.close();
-            m_f_localfile=false;
+            stop_mp3client(true);
             ESP_LOGD(TAG, "End of mp3file %s",m_mp3title.c_str());
         }
     }
@@ -749,13 +763,15 @@ void VS1053::loop(){
     if(m_f_webstream){                                      // Playing file from URL?
         if(m_ssl==false) av=client.available();// Available from stream
         if(m_ssl==true)  av=clientsecure.available();// Available from stream
-        if(av){
+        if(av)
+        {
             m_ringspace=m_ringbfsiz - m_rcount;
             part=m_ringbfsiz - m_rbwindex;                  // Part of length to xfer
             if(part>m_ringspace)part=m_ringspace;
             if(m_ssl==false) res=client.read(m_ringbuf+ m_rbwindex, part);   // Copy first part
             if(m_ssl==true)  res=clientsecure.read(m_ringbuf+ m_rbwindex, part);   // Copy first part
-            if(res>0){
+            if(res>0)
+            {
                 m_rcount+=res;
                 m_rbwindex+=res;
             }
@@ -882,26 +898,66 @@ void VS1053::loop(){
     } // end if(webstream)
 }
 //---------------------------------------------------------------------------------------
-void VS1053::stop_mp3client(){
-    int v=read_register(SCI_VOL);
-    mp3file.close();
+void VS1053::stop_mp3client(bool resetPosition)
+{
+    uint16_t actualVolume = read_register(SCI_VOL);
+    write_register(SCI_VOL, 0);                             // Mute while stopping
+
+    stopSong();
+
+    if (mp3file)
+    {
+        fs::FS &fs=SD;
+        File myTempFile;
+        String positionFileName = mp3file.name();
+
+        ESP_LOGV(TAG, "Current File: %s", mp3file.name());
+        ESP_LOGD(TAG, "Current File position: %d", mp3file.position());
+
+        positionFileName = positionFileName.substring(0,positionFileName.length() - 4) + ".pos";
+        ESP_LOGV(TAG, "Position File Name: %s", positionFileName.c_str());
+
+        myTempFile = fs.open(positionFileName, FILE_WRITE);
+
+        if(myTempFile)
+        {
+            myTempFile.print("File Position:");
+
+            if(resetPosition)
+            {
+                myTempFile.println(0);
+            } 
+            else
+            {
+                myTempFile.println(mp3file.position());
+            }
+
+            ESP_LOGV(TAG, "Successfully saved file position");
+
+            myTempFile.close();
+        } else {
+            ESP_LOGE(TAG, "Writing file position failed");
+        }
+
+        mp3file.close();
+    }
+
     m_f_localfile=false;
     m_f_webstream=false;
-    write_register(SCI_VOL, 0);  // Mute while stopping
-//    while(client.connected())
-//    {
-//        if(vs1053_info) vs1053_info("Stopping client\n"); // Stop connection to host
-//        client.flush();
-//        client.stop();
-//        delay(500);
-//    }
-    client.flush();                                       // Flush stream client
-    client.stop();                                        // Stop stream client
-    write_register(SCI_VOL, v);
+    
+    client.flush();                                         // Flush stream client
+    client.stop();                                          // Stop stream client
+
+    if (m_SystemFlagGroup)
+    {
+        xEventGroupClearBits(m_SystemFlagGroup, SF_PLAYING_FILE);
+    }
+
+    write_register(SCI_VOL, actualVolume);                  // restore the volume
 }
 //---------------------------------------------------------------------------------------
-
-bool VS1053::connecttohost(String host){
+bool VS1053::connecttohost(String host)
+{
 
     int inx;                                              // Position of ":" in hostname
     int port=80;                                          // Port number for host
@@ -941,11 +997,13 @@ bool VS1053::connecttohost(String host){
     clientsecure.stop(); clientsecure.flush(); // release memory
 
     if(host.endsWith(".m3u")||
-            host.endsWith(".pls")||
-            host.endsWith("asx")){                     // Is it an m3u or pls or asx playlist?
+        host.endsWith(".pls")||
+        host.endsWith("asx"))                     // Is it an m3u or pls or asx playlist?
+    {
         m_playlist=host;                                    // Save copy of playlist URL
         m_datamode=VS1053_PLAYLISTINIT;                     // Yes, start in PLAYLIST mode
-        if(m_playlist_num == 0){                            // First entry to play?
+        if(m_playlist_num == 0)                             // First entry to play?
+        {
             m_playlist_num=1;                               // Yes, set index
         }
         ESP_LOGD(TAG, "Playlist request, entry %d", m_playlist_num); // Most of the time there are zero bytes of metadata
@@ -996,8 +1054,8 @@ bool VS1053::connecttohost(String host){
     return false;
 }
 //---------------------------------------------------------------------------------------
-bool VS1053::connecttoSD(String sdfile){
-
+bool VS1053::connecttoSD(String sdfile, bool resume)
+{
     const uint8_t ascii[60]={
           //196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215,   ISO
             142, 143, 146, 128, 000, 144, 000, 000, 000, 000, 000, 000, 000, 165, 000, 000, 000, 000, 153, 000, //ASCII
@@ -1011,9 +1069,12 @@ bool VS1053::connecttoSD(String sdfile){
 
     stopSong();
     stop_mp3client();                           // Disconnect if still connected
-    clientsecure.stop(); clientsecure.flush();  // release memory if allocated
+    clientsecure.stop();                        // release memory if allocated
+    clientsecure.flush(); 
+
     m_f_localfile=true;
     m_f_webstream=false;
+
     while(sdfile[i] != 0){                      //convert UTF8 to ASCII
         path[i]=sdfile[i];
         if(path[i] > 195){
@@ -1028,14 +1089,49 @@ bool VS1053::connecttoSD(String sdfile){
 
     fs::FS &fs=SD;
     mp3file=fs.open(path);
-    if( !mp3file){
+    if(!mp3file){
         ESP_LOGE(TAG, "Failed to open file %s for reading", path);
         return false;
     }
+
+    //
+    if ((resume) && (fs.exists(sdfile.substring(0,sdfile.length() - 4) + ".pos")) ) 
+    {
+        File myTempFile;
+
+        ESP_LOGV(TAG, "Resuming track...");
+        myTempFile = fs.open(sdfile.substring(0,sdfile.length() - 4) + ".pos");
+
+        if (myTempFile) 
+        {
+            if (myTempFile.find("File Position:")) 
+            {
+                uint32_t position;
+
+                position = myTempFile.parseInt();
+
+                ESP_LOGD(TAG, "Resume playing at position %u", position);
+                mp3file.seek(position);
+
+                myTempFile.close();
+            } 
+            else
+            {
+                ESP_LOGD(TAG, "Position Identeification not found");
+            }
+        }
+    }
+
+    if (m_SystemFlagGroup)
+    {
+        xEventGroupSetBits(m_SystemFlagGroup, SF_PLAYING_FILE);
+    }
+
     return true;
 }
 //---------------------------------------------------------------------------------------
-bool VS1053::connecttospeech(String speech, String lang){
+bool VS1053::connecttospeech(String speech, String lang)
+{
     String host="translate.google.com";
     String path="/translate_tts";
     m_f_localfile=false;
@@ -1061,7 +1157,7 @@ bool VS1053::connecttospeech(String speech, String lang){
     while (clientsecure.connected()) {  // read the header
         String line = clientsecure.readStringUntil('\n');
         line+="\n";
-//      if(vs1053_info) vs1053_info(line.c_str());
+    //      if(vs1053_info) vs1053_info(line.c_str());
         if (line == "\r\n") break;
     }
 
@@ -1136,7 +1232,7 @@ bool VS1053::connecttospeech(String speech, String lang){
     while (clientsecure.connected()) {
         String line = clientsecure.readStringUntil('\n');
         line+="\n";
-//      if(vs1053_info) vs1053_info(line.c_str());
+    //      if(vs1053_info) vs1053_info(line.c_str());
         if (line == "\r\n") break;
     }
     uint8_t mp3buff[32];
@@ -1203,4 +1299,9 @@ String VS1053::urlencode(String str)
         }
     }
     return encodedString;
+}
+//---------------------------------------------------------------------------------------
+void VS1053::setSystemFlagGroup(EventGroupHandle_t eventGroup)
+{
+    m_SystemFlagGroup = eventGroup;
 }

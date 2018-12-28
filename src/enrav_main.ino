@@ -40,7 +40,7 @@ LedHandler          MyLedHandler;
 SimpleCLI           *pCli;          // pointer to command line handler
 String              NewCommand;     // string to collect characters from the input
 
-String Version = "EnRav 0.14.0";
+String Version = "EnRav 0.15.0";
 
 //The setup function is called once at startup of the sketch
 void setup() {
@@ -60,9 +60,10 @@ void setup() {
 
     SD.begin(SDCARD_CS);
 
+    MyPlayer.SetSystemFlagGroup(SystemFlagGroup);
     MyPlayer.begin(&PlayerCommandQueue);
 
-    MyLedHandler.SetEventGroup(&SystemFlagGroup);
+    MyLedHandler.SetEventGroup(SystemFlagGroup);
     MyLedHandler.begin();
     
     // WiFi.disconnect();
