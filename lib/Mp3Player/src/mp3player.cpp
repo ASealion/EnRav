@@ -86,10 +86,11 @@ void Mp3player::Run( void ) {
                 {
                     ESP_LOGD(TAG, "Received Path %s", PlayerControlMessage.pFileToPlay->c_str());
 
-                    m_pPlayer->connecttoSD(*(PlayerControlMessage.pFileToPlay), true); 
-                    // m_pPlayer->connecttoSD(*(PlayerControlMessage.pFileToPlay), (PlayerControlMessage.Command == CMD_RESUME_FILE)?true:false); 
+                    //TODO check for File Type / Extension
 
-                    delete(PlayerControlMessage.pFileToPlay);
+                    m_pPlayer->connecttoSD(*(PlayerControlMessage.pFileToPlay), (PlayerControlMessage.Command == CMD_RESUME_FILE)?true:false); 
+
+                    delete PlayerControlMessage.pFileToPlay;
 
                 }
             }

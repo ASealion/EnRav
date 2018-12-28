@@ -40,7 +40,7 @@ LedHandler          MyLedHandler;
 SimpleCLI           *pCli;          // pointer to command line handler
 String              NewCommand;     // string to collect characters from the input
 
-String Version = "EnRav 0.15.0";
+String Version = "EnRav 0.16.0";
 
 //The setup function is called once at startup of the sketch
 void setup() {
@@ -120,14 +120,17 @@ void CommandLine_create(void)
         Serial.println("available commands:");
         Serial.println("- version               : show firmware version");
         Serial.println("");
-        Serial.println("- play <filename>       : start playing the given file name (must be a mp3 or playlist)");
+        Serial.println("- play <filename>       : start playing the given file name");
+        Serial.println("                           from the beginning (must be a mp3 or m3u file)");
+        Serial.println("- resume <filename>     : start playing the given file name");
+        Serial.println("                           from previous position (must be a mp3 or m3u file)");
         Serial.println("- stop                  : stops the actual playback");
         Serial.println("");
         Serial.println("- volume <1..100>       : set volume to level");
         Serial.println("  volume up             : increase volume by 5 steps");
         Serial.println("  volume down           : decrease volume by 5 steps");
         Serial.println("");
-        Serial.println(" - write <filename>     :  setup RFID card with the given parameters");
+        Serial.println(" - write <filename>     : setup RFID card with the given parameters");
     }));
     // ======================================== //
 
@@ -143,6 +146,23 @@ void CommandLine_create(void)
 
         UserInterface::InterfaceCommandMessage_s newMessage =   { 
                                                                 .Command    = UserInterface::CMD_PLAY_FILE,
+                                                                .pData      = pFileName 
+                                                                };
+        // the message is copied to the queue, so no need for the original one :)
+        if (!xQueueSend( *pCommandInterfaceQueue, &newMessage, ( TickType_t ) 0 ) )
+        {
+            ESP_LOGE(TAG, "Send to queue failed");
+            delete pFileName;
+        }
+    }));
+    // ======================================== //
+
+    // =========== Add resume command ========== //
+    pCli->addCmd(new SingleArgCmd("resume", [](Cmd* cmd) {        
+        String *pFileName = new String(cmd->getValue(0));
+
+        UserInterface::InterfaceCommandMessage_s newMessage =   { 
+                                                                .Command    = UserInterface::CMD_RESUME_FILE,
                                                                 .pData      = pFileName 
                                                                 };
         // the message is copied to the queue, so no need for the original one :)
@@ -182,7 +202,9 @@ void CommandLine_create(void)
             CardData  *pNewCard = new CardData();
 
             //save the data to the stucture
-            pNewCard->m_fileName = fileName;
+            pNewCard->m_fileName    = fileName;
+            pNewCard->m_Volume      = 0;
+            pNewCard->m_Resumeable  = false;
 
             //and fill the message to the interface
             newMessage.Command    = UserInterface::CMD_CARD_WRITE;
