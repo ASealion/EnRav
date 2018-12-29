@@ -40,7 +40,7 @@ LedHandler          MyLedHandler;
 SimpleCLI           *pCli;          // pointer to command line handler
 String              NewCommand;     // string to collect characters from the input
 
-String Version = "EnRav 0.16.0";
+String Version = "EnRav 0.18.0";
 
 //The setup function is called once at startup of the sketch
 void setup() {

@@ -66,10 +66,7 @@ class VS1053
     const uint8_t SM_LINE1          = 14 ;        	// Bitnumber in SCI_MODE for Line input
 
     SPISettings     VS1053_SPI;                     // SPI settings for this slave
-
-//    char sbuf[256];
-    char path[256];
-
+    
     uint8_t  m_ringbuf[0x5000]; // 20480d           // Ringbuffer for mp3 stream
     const uint16_t m_ringbfsiz=sizeof(m_ringbuf);   // Ringbuffer size
     uint16_t m_rbwindex=0;                          // Ringbuffer writeindex
@@ -150,7 +147,7 @@ class VS1053
     {
       return ( digitalRead ( dreq_pin ) == HIGH ) ;
     }
-
+    bool    openMp3File(String sdfile, uint32_t position);
 
   public:
     // Constructor.  Only sets pin values.  Doesn't touch the chip.  Be sure to call begin()!
@@ -172,6 +169,7 @@ class VS1053
     uint16_t ringused();
     bool     connecttohost(String host);
     bool	 connecttoSD(String sdfile, bool resume = false);
+    String   findNextPlaylistEntry( bool restart = false );
     bool     connecttospeech(String speech, String lang);
     inline uint8_t getDatamode(){
        	return m_datamode;

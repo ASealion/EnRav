@@ -84,14 +84,40 @@ void Mp3player::Run( void ) {
                 //make sure the file exists
                 if (PlayerControlMessage.pFileToPlay != NULL)
                 {
+                    //remove white characters
+                    PlayerControlMessage.pFileToPlay->trim();
+
                     ESP_LOGD(TAG, "Received Path %s", PlayerControlMessage.pFileToPlay->c_str());
+                    
+                    if (PlayerControlMessage.pFileToPlay->charAt(0) == '/') 
+                    {
+                        String fileExtension = PlayerControlMessage.pFileToPlay->substring(PlayerControlMessage.pFileToPlay->lastIndexOf('.') + 1, PlayerControlMessage.pFileToPlay->length());
+                        
+                        fileExtension.toUpperCase();
 
-                    //TODO check for File Type / Extension
+                        ESP_LOGV(TAG, "Play File with Extension \"%s\"", fileExtension.c_str());
 
-                    m_pPlayer->connecttoSD(*(PlayerControlMessage.pFileToPlay), (PlayerControlMessage.Command == CMD_RESUME_FILE)?true:false); 
+                        if (fileExtension.equals("MP3") || fileExtension.equals("M3U"))
+                        {
+                            m_pPlayer->connecttoSD(*(PlayerControlMessage.pFileToPlay), (PlayerControlMessage.Command == CMD_RESUME_FILE)?true:false);
+                        }
+                        else 
+                        {
+                            ESP_LOGW(TAG, "Unsupported File Extension");
+                        }
+                    } 
+                    else if (PlayerControlMessage.pFileToPlay->startsWith("http"))
+                    {
+                        ESP_LOGV(TAG, "Play Stream");
+
+                        m_pPlayer->connecttohost(*(PlayerControlMessage.pFileToPlay));
+                    } 
+                    else 
+                    {
+                        ESP_LOGW(TAG, "Unsupported File Type");
+                    }
 
                     delete PlayerControlMessage.pFileToPlay;
-
                 }
             }
             else if (PlayerControlMessage.Command == CMD_STOP) 
