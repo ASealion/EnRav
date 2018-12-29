@@ -585,11 +585,11 @@ void VS1053::handlebyte(uint8_t b)
         if((b > 0x7F) ||                                        // Ignore unprintable characters
                 (b == '\r') ||                                  // Ignore CR
                 (b == '\0'))                                    // Ignore NULL
-                {
+        {
             // Yes, ignore
         }
         else if(b == '\n')                                      // Linefeed ?
-                {
+        {
             m_LFcount++;                                        // Count linefeeds
             ESP_LOGD(TAG, "Playlistheader: %s", m_metaline.c_str());  // Show playlistheader
             lcml=m_metaline;                                // Use lower case for compare
@@ -755,8 +755,42 @@ void VS1053::loop()
         }
         if(av == 0)
         {                                                   // No more data from SD Card
-            stop_mp3client(true);
             ESP_LOGD(TAG, "End of mp3file %s",m_mp3title.c_str());
+            if(m_playlist.length()) 
+            {
+                bool result = true;
+
+                //close the actual file
+                mp3file.close();
+
+                //increment the entry and 
+                m_playlist_num++;
+
+                //get next file from playlist (if it exists)
+                String nextTitle = findNextPlaylistEntry();
+
+                if(nextTitle.substring(nextTitle.lastIndexOf('.') + 1, nextTitle.length()).equalsIgnoreCase("mp3"))
+                {
+                    ESP_LOGI(TAG, "Playing next Entry from playlist \"%s\"", nextTitle.c_str());
+
+                    m_mp3title=nextTitle.substring(nextTitle.lastIndexOf('/') + 1, nextTitle.length());
+
+                    result = openMp3File(nextTitle, 0);
+                } 
+                else 
+                {
+                    ESP_LOGW(TAG, "Invalid Entry from playlist \"%s\"", nextTitle.c_str());
+                }
+                
+                if ( result == false)
+                {
+                    stop_mp3client(true);
+                }
+            }
+            else
+            {
+                stop_mp3client(true);
+            }
         }
     }
     // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -914,7 +948,16 @@ void VS1053::stop_mp3client(bool resetPosition)
         ESP_LOGV(TAG, "Current File: %s", mp3file.name());
         ESP_LOGD(TAG, "Current File position: %d", mp3file.position());
 
-        positionFileName = positionFileName.substring(0,positionFileName.length() - 4) + ".pos";
+        if(m_playlist.length()) 
+        {
+            ESP_LOGV(TAG, "Current Playlist: %s", m_playlist.c_str());
+            ESP_LOGD(TAG, "Current Playlist position: %d", m_playlist_num);
+            positionFileName = m_playlist.substring(0,m_playlist.length() - 4) + ".pos";
+        }
+        else 
+        {
+            positionFileName = positionFileName.substring(0,positionFileName.length() - 4) + ".pos";
+        }
         ESP_LOGV(TAG, "Position File Name: %s", positionFileName.c_str());
 
         myTempFile = fs.open(positionFileName, FILE_WRITE);
@@ -934,6 +977,19 @@ void VS1053::stop_mp3client(bool resetPosition)
 
             ESP_LOGV(TAG, "Successfully saved file position");
 
+            myTempFile.print("Playlist:");
+
+            if(resetPosition)
+            {
+                myTempFile.println(0);
+            } 
+            else
+            {
+                myTempFile.println(m_playlist_num);
+            }
+
+            ESP_LOGV(TAG, "Successfully saved playlist position");
+
             myTempFile.close();
         } else {
             ESP_LOGE(TAG, "Writing file position failed");
@@ -945,12 +1001,15 @@ void VS1053::stop_mp3client(bool resetPosition)
     m_f_localfile=false;
     m_f_webstream=false;
     
+    m_playlist_num = 0;
+    m_playlist     = "";
+
     client.flush();                                         // Flush stream client
     client.stop();                                          // Stop stream client
 
     if (m_SystemFlagGroup)
     {
-        xEventGroupClearBits(m_SystemFlagGroup, SF_PLAYING_FILE);
+        xEventGroupClearBits(m_SystemFlagGroup, SF_PLAYING_FILE | SF_PLAYING_AUDIOBOOK);
     }
 
     write_register(SCI_VOL, actualVolume);                  // restore the volume
@@ -1064,10 +1123,14 @@ bool VS1053::connecttoSD(String sdfile, bool resume)
           //236, 237, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255    ISO
             000, 161, 140, 139, 000, 164, 000, 162, 147, 000, 148, 000, 000, 000, 163, 150, 129, 000, 000, 152};//ASCII
 
-
+    char path[256];
     uint16_t i=0, s=0;
+    uint32_t position = 0;
+    uint32_t playlist = 0;
+    String fileExtension;
+    bool result = false;
+    EventBits_t     bitFlags = 0;
 
-    stopSong();
     stop_mp3client();                           // Disconnect if still connected
     clientsecure.stop();                        // release memory if allocated
     clientsecure.flush(); 
@@ -1083,18 +1146,16 @@ bool VS1053::connecttoSD(String sdfile, bool resume)
         } i++;
     }
     path[i]=0;
-    m_mp3title=sdfile.substring(sdfile.lastIndexOf('/') + 1, sdfile.length());
-    showstreamtitle(m_mp3title.c_str(), true);
     ESP_LOGD(TAG, "Reading file: %s", path);
 
-    fs::FS &fs=SD;
-    mp3file=fs.open(path);
-    if(!mp3file){
-        ESP_LOGE(TAG, "Failed to open file %s for reading", path);
-        return false;
-    }
+    // get the file extension
+    fileExtension = sdfile.substring(sdfile.lastIndexOf('.') + 1, sdfile.length());
+
+    ESP_LOGV(TAG, "Play File with Extension \"%s\"", fileExtension.c_str());
 
     //
+    fs::FS &fs=SD;
+
     if ((resume) && (fs.exists(sdfile.substring(0,sdfile.length() - 4) + ".pos")) ) 
     {
         File myTempFile;
@@ -1106,28 +1167,151 @@ bool VS1053::connecttoSD(String sdfile, bool resume)
         {
             if (myTempFile.find("File Position:")) 
             {
-                uint32_t position;
-
                 position = myTempFile.parseInt();
 
                 ESP_LOGD(TAG, "Resume playing at position %u", position);
-                mp3file.seek(position);
-
-                myTempFile.close();
             } 
             else
             {
-                ESP_LOGD(TAG, "Position Identeification not found");
+                ESP_LOGD(TAG, "Position Identification not found");
             }
+
+            myTempFile.seek(0);
+            
+            if (myTempFile.find("Playlist:")) 
+            {
+                playlist = myTempFile.parseInt();
+
+                ESP_LOGD(TAG, "Resume playlist at entry %u", playlist);
+            } 
+            else
+            {
+                ESP_LOGD(TAG, "Playlist Identification not found");
+            }
+
+            myTempFile.close();
         }
     }
 
-    if (m_SystemFlagGroup)
+
+    if (fileExtension.equalsIgnoreCase("MP3"))
     {
-        xEventGroupSetBits(m_SystemFlagGroup, SF_PLAYING_FILE);
+        m_mp3title=sdfile.substring(sdfile.lastIndexOf('/') + 1, sdfile.length());
+
+        result = openMp3File(path, position);
+
+        bitFlags = SF_PLAYING_FILE;
+    }
+    else if (fileExtension.equalsIgnoreCase("M3U"))
+    {
+        // save the playlist path and start with the resumed entry
+        m_playlist      = path;
+        m_playlist_num  = playlist;
+
+        String actualEntry = findNextPlaylistEntry(true);
+
+        //send the file to the player
+        if(actualEntry.substring(actualEntry.lastIndexOf('.') + 1, actualEntry.length()).equalsIgnoreCase("mp3"))
+        {
+            ESP_LOGI(TAG, "Playing Entry from playlist \"%s\"", actualEntry.c_str());
+
+            m_mp3title=actualEntry.substring(actualEntry.lastIndexOf('/') + 1, actualEntry.length());
+
+            result = openMp3File(actualEntry, position);
+        } 
+        else 
+        {
+            ESP_LOGW(TAG, "Invalid Entry from playlist \"%s\"", actualEntry.c_str());
+        }
+
+        bitFlags = SF_PLAYING_FILE | SF_PLAYING_AUDIOBOOK;
     }
 
-    return true;
+    if ((result) && (m_SystemFlagGroup))
+    {
+        xEventGroupSetBits(m_SystemFlagGroup, bitFlags);
+
+        showstreamtitle(m_mp3title.c_str(), true);
+    }
+
+    return result;
+}
+
+
+String VS1053::findNextPlaylistEntry( bool restart )
+{
+    fs::FS  &fs=SD;
+    File     myPlaylistFile;
+    String   actualEntry = "";
+
+    ESP_LOGD(TAG, "Analysing playlist %s", m_playlist.c_str());
+
+    myPlaylistFile = fs.open(m_playlist);
+
+    if (myPlaylistFile)
+    {
+        uint32_t actualEntryNumber = 0;
+
+        ESP_LOGD(TAG, "looking for line %u", m_playlist_num+1);
+
+        //read lines untill the "counter" matches the line
+        while (actualEntryNumber <= m_playlist_num)
+        {
+            //read the next line
+            actualEntry = myPlaylistFile.readStringUntil('\r');
+
+            //remove whitespaces
+            actualEntry.trim();
+
+            //
+            actualEntryNumber++;
+
+            //check if we have reached the end of the list without finding our number
+            if ((actualEntry.length() == 0) && (myPlaylistFile.available() == false))
+            {
+                ESP_LOGV(TAG, "Line %u does not exist, using line 1", m_playlist_num);
+
+                //rewind the file
+                myPlaylistFile.seek(0);
+                actualEntryNumber   = 0;
+                m_playlist_num      = 0;
+                actualEntry         = "";
+
+                if (restart == false)
+                {
+                    break;
+                }
+            }
+            else
+            {
+                ESP_LOGV(TAG, "Read playlist entry %u: \"%s\"", actualEntryNumber, actualEntry.c_str());
+            }
+        };
+
+        myPlaylistFile.close();
+    }
+
+    return actualEntry;
+}
+
+
+//---------------------------------------------------------------------------------------
+bool VS1053::openMp3File(String sdfile, uint32_t position) 
+{
+    bool result = true;
+
+    fs::FS &fs=SD;
+    mp3file=fs.open(sdfile);
+    if(!mp3file)
+    {
+        ESP_LOGE(TAG, "Failed to open file %s for reading", sdfile);
+        result = false;
+    }
+    else 
+    {
+        mp3file.seek(position);
+    }
+    return result;
 }
 //---------------------------------------------------------------------------------------
 bool VS1053::connecttospeech(String speech, String lang)
