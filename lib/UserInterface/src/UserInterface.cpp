@@ -8,7 +8,7 @@
 #endif
 
 
-UserInterface::UserInterface() : m_CardHandler()
+UserInterface::UserInterface() : m_CardHandler(),m_BtnVolumeUp(BUTTON_2),m_BtnVolumeDown(BUTTON_3),m_BtnPauseResume(BUTTON_1)
 {
     m_handle                = NULL;
     m_CardStatus            = RfidCardStatus::NoCard;
@@ -48,6 +48,10 @@ void UserInterface::begin( void )
 
     m_CardHandler.connectCardReader();
 
+    m_BtnPauseResume.begin();
+    m_BtnVolumeUp.begin();
+    m_BtnVolumeDown.begin();
+
     //create the task that will handle all user interactions
     xTaskCreate(
                     TaskFunctionAdapter,        /* Task function. */
@@ -81,7 +85,39 @@ void UserInterface::run( void )
     while (true)
     {
         //check buttons
+        m_BtnPauseResume.read();
+        m_BtnVolumeUp.read();
+        m_BtnVolumeDown.read();
 
+        if (m_BtnVolumeUp.wasPressed())
+        {
+            Mp3player::PlayerControlMessage_s newMessage = { .Command = Mp3player::CMD_VOL_UP, 
+                                                             .pFileToPlay = NULL };
+
+            if (xQueueSend( *m_pPlayerQueue, &newMessage, ( TickType_t ) 0 ) )
+            {
+                ESP_LOGD(TAG, "Send \"Volume Up\" Message to queue");
+            } 
+            else 
+            {
+                ESP_LOGE(TAG, "Send to player queue failed");
+            }
+        }
+
+        if (m_BtnVolumeDown.wasPressed())
+        {
+            Mp3player::PlayerControlMessage_s newMessage = { .Command = Mp3player::CMD_VOL_DOWN, 
+                                                             .pFileToPlay = NULL };
+
+            if (xQueueSend( *m_pPlayerQueue, &newMessage, ( TickType_t ) 0 ) )
+            {
+                ESP_LOGD(TAG, "Send \"Volume Down\" Message to queue");
+            } 
+            else 
+            {
+                ESP_LOGE(TAG, "Send to player queue failed");
+            }
+        }
 
         //check GyroSensor
 
@@ -268,35 +304,35 @@ void UserInterface::run( void )
             // CMD_VOLUME_UP, 
             else if (InterfaceCommandMessage.Command == UserInterface::CMD_VOLUME_UP) 
             {
-                //make sure the file exists
-                if (InterfaceCommandMessage.pData != NULL)
+                Mp3player::PlayerControlMessage_s newMessage = { .Command = Mp3player::CMD_VOL_UP, 
+                                                                 .pFileToPlay = NULL };
+
+                if (xQueueSend( *m_pPlayerQueue, &newMessage, ( TickType_t ) 0 ) )
                 {
-                    // String *pFileName = (String *) InterfaceCommandMessage.pData;
-
-                    // ESP_LOGV(TAG, "Received FileName %s", pFileName->c_str());
-
-                    // //TODO create "next" message
-
-                    // delete (String*) InterfaceCommandMessage.pData;
+                    ESP_LOGD(TAG, "Send \"Volume Up\" Message to queue");
+                } 
+                else 
+                {
+                    ESP_LOGE(TAG, "Send to player queue failed");
                 }
             }
             // CMD_VOLUME_DOWN,
             else if (InterfaceCommandMessage.Command == UserInterface::CMD_VOLUME_DOWN) 
             {
-                //make sure the file exists
-                if (InterfaceCommandMessage.pData != NULL)
+                Mp3player::PlayerControlMessage_s newMessage = { .Command = Mp3player::CMD_VOL_DOWN, 
+                                                                 .pFileToPlay = NULL };
+
+                if (xQueueSend( *m_pPlayerQueue, &newMessage, ( TickType_t ) 0 ) )
                 {
-                    // String *pFileName = (String *) InterfaceCommandMessage.pData;
-
-                    // ESP_LOGV(TAG, "Received FileName %s", pFileName->c_str());
-
-                    // //TODO create "next" message
-
-                    // delete (String*) InterfaceCommandMessage.pData;
+                    ESP_LOGD(TAG, "Send \"Volume Down\" Message to queue");
+                } 
+                else 
+                {
+                    ESP_LOGE(TAG, "Send to player queue failed");
                 }
             }               
             // CMD_CARD_WRITE,
-            if (InterfaceCommandMessage.Command == UserInterface::CMD_CARD_WRITE) 
+            else if (InterfaceCommandMessage.Command == UserInterface::CMD_CARD_WRITE) 
             {
                 //make sure the file exists
                 if (InterfaceCommandMessage.pData != NULL)

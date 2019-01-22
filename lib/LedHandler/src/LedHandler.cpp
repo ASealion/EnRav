@@ -10,6 +10,13 @@ LedHandler::LedHandler( )
     //prepare the pwm channels
     ledcSetup(m_channel_Red_1, m_frequency, m_resolution);
     ledcAttachPin(LED_RED_1, m_channel_Red_1);
+    ledcSetup(m_channel_Red_2, m_frequency, m_resolution);
+    ledcAttachPin(LED_RED_2, m_channel_Red_2);
+
+    ledcSetup(m_channel_Green_1, m_frequency, m_resolution);
+    ledcAttachPin(LED_GREEN_1, m_channel_Green_1);
+    ledcSetup(m_channel_Green_2, m_frequency, m_resolution);
+    ledcAttachPin(LED_GREEN_2, m_channel_Green_2);
 }
 
 LedHandler::~LedHandler()
@@ -81,11 +88,19 @@ void LedHandler::Run( void ) {
 
         if (eventBits & SF_PLAYING_FILE) 
         {
-            ledcWrite(m_channel_Red_1, 255);
+            ledcWrite(m_channel_Red_1, 0);
+            ledcWrite(m_channel_Red_2, 0);
+
+            ledcWrite(m_channel_Green_1, 255);
+            ledcWrite(m_channel_Green_2, 255);
         } 
         else
         {
             ledcWrite(m_channel_Red_1, 32);
+            ledcWrite(m_channel_Red_2, 32);
+
+            ledcWrite(m_channel_Green_1, 0);
+            ledcWrite(m_channel_Green_2, 0);
         }
         // for (int dutyCycle = 0; dutyCycle <= 255; dutyCycle++) {
         //     ledcWrite(m_channel_Red_1, dutyCycle);
