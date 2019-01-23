@@ -42,7 +42,7 @@ LedHandler          MyLedHandler;
 SimpleCLI           *pCli;          // pointer to command line handler
 String              NewCommand;     // string to collect characters from the input
 
-String Version = "EnRav 0.19.0";
+String Version = "EnRav 0.20.0";
 
 //The setup function is called once at startup of the sketch
 void setup() {
@@ -216,8 +216,15 @@ void CommandLine_create(void)
     // ======================================== //
 
     // =========== Add write command ========== //
-    Command* writeCard = new Command("write", [](Cmd* cmd) {
+    Command* writeCard = new Command("write", [](Cmd* cmd) {        
         String fileName = cmd->getValue(0);
+        String resume   = cmd->getValue(1);
+        // bool resume = cmd->isSet("r");
+        // long volume = cmd->getValue("v").toInt();
+        
+
+        ESP_LOGI(TAG, "Prepare card for file \"%s\"%s", fileName.c_str(), (resume.equalsIgnoreCase("resume"))?" with resume":"");
+        // ESP_LOGI(TAG, "Prepare card for file \"%s\"%s volume %ld", fileName.c_str(), resume?" with resume":"", volume);
 
         if (fileName.length() > 0) 
         {
@@ -227,7 +234,7 @@ void CommandLine_create(void)
             //save the data to the stucture
             pNewCard->m_fileName    = fileName;
             pNewCard->m_Volume      = 0;
-            pNewCard->m_Resumeable  = false;
+            pNewCard->m_Resumeable  = (resume.equalsIgnoreCase("resume"))?true:false;
 
             //and fill the message to the interface
             newMessage.Command    = UserInterface::CMD_CARD_WRITE;
@@ -246,6 +253,9 @@ void CommandLine_create(void)
         }
     });    
     writeCard->addArg(new AnonymReqArg());
+    // writeCard->addArg(new EmptyArg("r"));
+    // writeCard->addArg(new OptArg("write v", "15"));
+    writeCard->addArg(new AnonymOptArg());
     pCli->addCmd(writeCard);
     // ======================================== //
 
