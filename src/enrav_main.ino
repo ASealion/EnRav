@@ -248,4 +248,17 @@ void CommandLine_create(void)
         }
     }));
     // ======================================== //    
+
+    // =========== Add sleep command ========== //
+    pCli->addCmd(new EmptyCmd("sleep", [](Cmd* cmd) {     
+
+        esp_sleep_enable_ext0_wakeup(GPIO_NUM_33,0); //1 = High, 0 = Low
+
+        digitalWrite(MFRC522_RST, LOW);
+
+        esp_sleep_enable_timer_wakeup(60 * 1000000);
+
+        esp_deep_sleep_start();
+    }));
+    // ======================================== //
 }
