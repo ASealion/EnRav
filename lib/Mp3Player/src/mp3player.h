@@ -41,6 +41,7 @@
             EventGroupHandle_t  m_SystemFlagGroup;
             VS1053              *m_pPlayer;
 
+            uint8_t             m_volume;
 
             //
             void Run( void );

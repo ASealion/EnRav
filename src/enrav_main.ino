@@ -6,6 +6,7 @@
 #include "UserInterface.h"
 #include "LedHandler.h"
 
+
 #include "pinout.h"
 
 #include "SimpleCLI.h"
@@ -36,11 +37,12 @@ EventGroupHandle_t  SystemFlagGroup;
 
 LedHandler          MyLedHandler;
 
+
 //
 SimpleCLI           *pCli;          // pointer to command line handler
 String              NewCommand;     // string to collect characters from the input
 
-String Version = "EnRav 0.18.0";
+String Version = "EnRav 0.20.0";
 
 //The setup function is called once at startup of the sketch
 void setup() {
@@ -187,14 +189,42 @@ void CommandLine_create(void)
     // ======================================== //
 
     // =========== Add volume command ========== //
-    pCli->addCmd(new SingleArgCmd("volume", [](Cmd* cmd) {        
-        // String *pFileName = new String(cmd->getValue(0));
+    pCli->addCmd(new SingleArgCmd("volume", [](Cmd* cmd) {     
+        UserInterface::InterfaceCommandMessage_s newMessage = { .Command = UserInterface::CMD_UNKNOWN};   
+        String detail = String(cmd->getValue(0));
+        
+        if (detail.equalsIgnoreCase("UP"))
+        {
+            newMessage.Command  = UserInterface::CMD_VOLUME_UP;
+            newMessage.pData    = NULL;
+        }
+        else if (detail.equalsIgnoreCase("DOWN"))
+        {
+            newMessage.Command  = UserInterface::CMD_VOLUME_DOWN;
+            newMessage.pData    = NULL;
+        }
+        
+        if (newMessage.Command != UserInterface::CMD_UNKNOWN)
+        {
+            // the message is copied to the queue, so no need for the original one :)
+            if (!xQueueSend( *pCommandInterfaceQueue, &newMessage, ( TickType_t ) 0 ) )
+            {
+                ESP_LOGE(TAG, "Send to queue failed");
+            } 
+        }  
     }));
     // ======================================== //
 
     // =========== Add write command ========== //
-    Command* writeCard = new Command("write", [](Cmd* cmd) {
+    Command* writeCard = new Command("write", [](Cmd* cmd) {        
         String fileName = cmd->getValue(0);
+        String resume   = cmd->getValue(1);
+        // bool resume = cmd->isSet("r");
+        // long volume = cmd->getValue("v").toInt();
+        
+
+        ESP_LOGI(TAG, "Prepare card for file \"%s\"%s", fileName.c_str(), (resume.equalsIgnoreCase("resume"))?" with resume":"");
+        // ESP_LOGI(TAG, "Prepare card for file \"%s\"%s volume %ld", fileName.c_str(), resume?" with resume":"", volume);
 
         if (fileName.length() > 0) 
         {
@@ -204,7 +234,7 @@ void CommandLine_create(void)
             //save the data to the stucture
             pNewCard->m_fileName    = fileName;
             pNewCard->m_Volume      = 0;
-            pNewCard->m_Resumeable  = false;
+            pNewCard->m_Resumeable  = (resume.equalsIgnoreCase("resume"))?true:false;
 
             //and fill the message to the interface
             newMessage.Command    = UserInterface::CMD_CARD_WRITE;
@@ -223,6 +253,9 @@ void CommandLine_create(void)
         }
     });    
     writeCard->addArg(new AnonymReqArg());
+    // writeCard->addArg(new EmptyArg("r"));
+    // writeCard->addArg(new OptArg("write v", "15"));
+    writeCard->addArg(new AnonymOptArg());
     pCli->addCmd(writeCard);
     // ======================================== //
 

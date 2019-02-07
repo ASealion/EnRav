@@ -5,7 +5,8 @@ Mp3player::Mp3player(uint8_t _cs_pin = 25, uint8_t _dcs_pin = 26, uint8_t _dreq_
 {
     m_pPlayer = new VS1053(_cs_pin, _dcs_pin, _dreq_pin);
 
-    m_SystemFlagGroup = NULL;
+    m_SystemFlagGroup   = NULL;
+    m_volume            = 15;
 }
 
 Mp3player::~Mp3player()
@@ -56,7 +57,7 @@ void Mp3player::Run( void ) {
     PlayerControlMessage_s   PlayerControlMessage;
 
     m_pPlayer->begin();
-    m_pPlayer->setVolume(15);
+    m_pPlayer->setVolume(m_volume);
 
     m_pPlayer->printVersion();
     //m_pPlayer->connecttoSD("/01.mp3"); // SD card
@@ -124,6 +125,22 @@ void Mp3player::Run( void ) {
             {
                 ESP_LOGD(TAG, "Received stop");
                 m_pPlayer->stop_mp3client();
+            }
+            else if (PlayerControlMessage.Command == CMD_VOL_UP)
+            {
+                if (m_volume < 21)
+                {
+                    m_volume++;
+                    m_pPlayer->setVolume(m_volume);
+                }
+            }
+            else if (PlayerControlMessage.Command == CMD_VOL_DOWN)
+            {
+                if (m_volume > 0)
+                {
+                    m_volume--;
+                    m_pPlayer->setVolume(m_volume);
+                }
             }
         }
 

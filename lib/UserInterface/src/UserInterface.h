@@ -7,6 +7,8 @@
 
     #include "mp3player.h"
 
+    #include "JC_Button.h"
+
     class UserInterfaceCommand {
         enum class Command { SetVolume, WriteCard } m_command;
     };
@@ -62,6 +64,10 @@
             // out own task and command stuff
             TaskHandle_t            m_handle;
             QueueHandle_t           m_InterfaceCommandQueue;
+
+            Button                  m_BtnVolumeUp;
+            Button                  m_BtnVolumeDown;
+            Button                  m_BtnPauseResume;
 
             //internal functions
             void run( void );
