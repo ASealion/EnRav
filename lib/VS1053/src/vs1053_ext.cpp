@@ -935,7 +935,7 @@ void VS1053::loop()
 void VS1053::stop_mp3client(bool resetPosition)
 {
     uint16_t actualVolume = read_register(SCI_VOL);
-    write_register(SCI_VOL, 0);                             // Mute while stopping
+    write_register(SCI_VOL, 0xfefe);                             // Mute while stopping
 
     stopSong();
 
